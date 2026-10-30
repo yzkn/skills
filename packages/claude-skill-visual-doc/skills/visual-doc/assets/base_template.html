@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<!--
+  visual-doc 共通テンプレート（自己完結・ライト/ダーク両対応）
+  出典: mhattingpete/claude-skills-marketplace の visual-documentation-plugin（Apache-2.0）の
+        base_template.html を、紫グラデーションの除去・ダークテーマ対応・日本語フォントスタック・
+        意味色トークン化のうえ全面的に書き換えたもの。
+
+  使い方: {{...}} を実データで置換し、不要な節は削除する。
+  禁止: 外部 CDN / Web フォント / 外部画像 / 外部 JS の参照（自己完結要件）
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{タイトル}}</title>
+<style>
+  :root {
+    --bg: #f7fafc;
+    --surface: #ffffff;
+    --text: #1f2733;
+    --text-sub: #5a6675;
+    --border: #d7dee7;
+    /* --c-*      : 文字・線・図形境界の色（背景に対して 3:1 以上を満たす）
+       --c-*-fill : 塗り面の色。上に載せる文字は必ず白（class="on-fill"）にする前提で、
+                    白との比 4.5:1 以上を満たす濃色に統一している（ライト/ダーク共通）。
+                    原典（visual-documentation-plugin）の明るい塗り色は白文字で
+                    2.15〜3.05:1 しか出ず WCAG AA に不足するため採用していない
+       --c-*-soft : 淡色面。上に載せる文字は本文色（--text）にする */
+    --c-ok: #22543d;      --c-ok-fill: #2f855a;   --c-ok-soft: #e6f4ea;
+    --c-warn: #92400e;    --c-warn-fill: #b45309; --c-warn-soft: #fdf4e3;
+    --c-info: #2a4365;    --c-info-fill: #2b6cb0; --c-info-soft: #e6f2ff;
+    --c-err: #9b2c2c;     --c-err-fill: #c53030;  --c-err-soft: #fdeaea;
+    --c-proc: #9c4221;    --c-proc-fill: #c05621; --c-proc-soft: #fdf0e6;
+    --c-accent: #553c9a;  --c-accent-fill: #6b46c1;
+    --c-muted: #6b7684;
+    --radius: 6px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181d;
+      --surface: #1c2127;
+      --text: #e6eaef;
+      --text-sub: #a4aeba;
+      --border: #333c47;
+      /* --c-*-fill は白文字前提でライト/ダーク共通のため、ここでは上書きしない */
+      --c-ok: #6ee7a3;      --c-ok-soft: #1b2c23;
+      --c-warn: #fbc46b;    --c-warn-soft: #2e2519;
+      --c-info: #7cc0f8;    --c-info-soft: #17252f;
+      --c-err: #fb9a9a;     --c-err-soft: #2e1c1c;
+      --c-proc: #f6b183;    --c-proc-soft: #2c2019;
+      --c-accent: #c3a6f5;
+      --c-muted: #9aa5b1;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    background: var(--bg); color: var(--text);
+    font-family: "Yu Gothic UI", "Yu Gothic", "Hiragino Kaku Gothic ProN",
+                 "Noto Sans JP", "Segoe UI", system-ui, sans-serif;
+    font-size: 15px; line-height: 1.75;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* --- ヘッダー（グラデーションを敷かない。左アクセント罫で階層を作る） --- */
+  header { border-left: 4px solid var(--c-info); padding: 4px 0 4px 16px; margin-bottom: 8px; }
+  h1 { font-size: 1.6rem; line-height: 1.4; margin: 0 0 4px; }
+  .meta { color: var(--text-sub); font-size: .85rem; }
+  h2 { font-size: 1.2rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1rem; margin: 24px 0 8px; }
+  p { margin: 0 0 12px; }
+
+  /* --- 派生物であることの注記（design/ 配下に出力する場合は必須） --- */
+  .notice {
+    background: var(--c-warn-soft); border: 1px solid var(--border);
+    border-left: 4px solid var(--c-warn);
+    border-radius: var(--radius); padding: 12px 16px; margin: 16px 0 8px;
+    font-size: .88rem; color: var(--text);
+  }
+
+  section { margin-bottom: 8px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+  }
+  /* 等幅 3 分割の格子を避ける: 内容量に応じて幅が変わる */
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .row > .card { flex: 1 1 220px; }
+
+  /* --- KPI（値・比較対象・単位を必ず添える） --- */
+  .kpi-label { color: var(--text-sub); font-size: .82rem; }
+  .kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.2; }
+  .kpi-unit { font-size: .9rem; font-weight: 400; color: var(--text-sub); margin-left: 2px; }
+  .kpi-delta { font-size: .85rem; }
+  .kpi-delta.up { color: var(--c-ok); } .kpi-delta.down { color: var(--c-err); }
+
+  /* --- バッジ（色 + テキストの二重表現） --- */
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: .78rem; font-weight: 600; border: 1px solid currentColor; white-space: nowrap;
+  }
+  .badge.ok { color: var(--c-ok); background: var(--c-ok-soft); }
+  .badge.warn { color: var(--c-warn); background: var(--c-warn-soft); }
+  .badge.err { color: var(--c-err); background: var(--c-err-soft); }
+  .badge.info { color: var(--c-info); background: var(--c-info-soft); }
+  .badge.muted { color: var(--c-muted); background: transparent; }
+  /* 根拠のない値には必ずこれを使う（推測で埋めない） */
+  .tbd { color: var(--c-muted); font-style: italic; }
+
+  /* --- 進捗バー（数値を併記する） --- */
+  .bar { height: 14px; border-radius: 7px; background: var(--border); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--c-info); }
+
+  /* --- 表（横長は個別にスクロール。body は横スクロールさせない） --- */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  caption { text-align: left; color: var(--text-sub); font-size: .85rem; padding-bottom: 6px; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--c-info-soft); font-weight: 600; }
+
+  /* --- コード（構文ハイライトは行わない: 外部 JS を使わないため） --- */
+  pre {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--c-muted);
+    border-radius: var(--radius); padding: 12px 14px; overflow-x: auto;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: .84rem; line-height: 1.6;
+  }
+  code { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: .88em; }
+  :not(pre) > code { background: var(--c-info-soft); padding: 1px 5px; border-radius: 3px; }
+
+  /* --- SVG 既定（色は変数か currentColor を使い、ハードコードしない） --- */
+  svg { max-width: 100%; height: auto; display: block; }
+  svg text { font-family: inherit; fill: var(--text); }
+  svg .edge { stroke: var(--c-muted); stroke-width: 2; fill: none; stroke-linejoin: round; }
+  svg .node-ok { fill: var(--c-ok-fill); stroke: var(--c-ok); stroke-width: 2; }
+  svg .node-info { fill: var(--c-info-fill); stroke: var(--c-info); stroke-width: 2; }
+  svg .node-warn { fill: var(--c-warn-fill); stroke: var(--c-warn); stroke-width: 2; }
+  svg .node-err { fill: var(--c-err-fill); stroke: var(--c-err); stroke-width: 2; }
+  svg .node-proc { fill: var(--c-proc-fill); stroke: var(--c-proc); stroke-width: 2; }
+  /* 塗り面（.node-*）の上に載せる文字は必ずこのクラスを付ける。
+     既定の fill（var(--text)）のままだとダークテーマでコントラストが不足する */
+  svg .on-fill { fill: #ffffff; }
+  svg .edge-label { fill: var(--text-sub); font-size: 12px; }   /* 矢印に添える条件ラベル */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .84rem; color: var(--text-sub); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .legend i.round { border-radius: 6px; }                        /* 開始・終了（角丸） */
+  .legend i.diamond { border-radius: 2px; transform: rotate(45deg) scale(.85); }  /* 判断 */
+  figure { margin: 0 0 8px; }
+  figcaption { color: var(--text-sub); font-size: .85rem; margin-top: 6px; }
+
+  footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--border);
+           color: var(--text-sub); font-size: .82rem; }
+
+  @media print {
+    body { background: #fff; color: #000; padding: 0; }
+    .card { break-inside: avoid; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>{{タイトル}}</h1>
+    <div class="meta">生成日時: {{YYYY-MM-DD HH:MM}}／対象: {{対象名}}</div>
+  </header>
+
+  <!-- design/ 配下に出力する場合は必須。report/ でも再生成前提であることを明記する -->
+  <div class="notice">
+    本ファイルは <strong>自動生成の派生物</strong>です。正本は <code>{{正本のパス}}</code> であり、
+    正本の更新時に <code>/visual-doc</code> で再生成してください。直接編集しないでください。
+  </div>
+
+  <section>
+    <h2>{{節タイトル}}</h2>
+    <figure>
+      <svg viewBox="0 0 800 400" role="img">
+        <title>{{図が示す内容を 1 文で}}</title>
+        <defs>
+          <!-- marker は参照元の stroke を継承しない。線（.edge）と色を合わせるため
+               fill に --c-muted を直接指定する（currentColor だと本文色になる） -->
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--c-muted)"/>
+          </marker>
+        </defs>
+        <!-- 図要素をここに。座標の決め方は references/svg_library.md -->
+      </svg>
+      <figcaption>{{図の要点を 1〜2 文。図を読めない環境でも主張が伝わるように書く}}</figcaption>
+    </figure>
+    <div class="legend">
+      <span><i style="background:var(--c-info-fill)"></i>{{凡例1}}</span>
+      <span><i style="background:var(--c-proc-fill)"></i>{{凡例2}}</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>{{表の節}}</h2>
+    <div class="scroll-x">
+      <table>
+        <caption>{{表が示す内容}}</caption>
+        <thead><tr><th scope="col">{{列1}}</th><th scope="col">{{列2}}</th><th scope="col">状態</th></tr></thead>
+        <tbody>
+          <tr><td>{{値}}</td><td>{{値}}</td><td><span class="badge ok">完了</span></td></tr>
+          <tr><td>{{値}}</td><td><span class="tbd">要確認</span></td><td><span class="badge warn">進行中</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    生成: <code>/visual-doc</code>／出典: visual-documentation-plugin (Apache-2.0) を本リポジトリ規約に合わせて再編
+  </footer>
+
+</div>
+</body>
+</html>

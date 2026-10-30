@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/safety-net.ps1 2>doc/log/error/safety-net-stderr.log"
+          }
+        ]
+      }
+    ]
+  }
+}

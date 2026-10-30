@@ -1,0 +1,48 @@
+{
+  "name": "glacier",
+  "description": "寒色系（グレイシャー）。royal-navy の配色バリエーション（フォント・レイアウトは共通）",
+  "colors": {
+    "navy_dark": "12556E",
+    "navy_mid": "2E7E9E",
+    "blue_light": "6FB3CB",
+    "blue_pale": "B5DAE7",
+    "blue_ultra_pale": "E3F1F7",
+    "white": "FFFFFF",
+    "text_dark": "172A31",
+    "text_gray": "6C8089",
+    "gray_light": "F3F8FA",
+    "accent_red": "C0392B",
+    "accent_green": "1F8A70",
+    "accent_cyan": "49C5B6"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "blue_pale",
+      "text_gray"
+    ],
+    "pptxgenjs": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "accent_cyan",
+      "blue_pale",
+      "text_gray"
+    ]
+  }
+}

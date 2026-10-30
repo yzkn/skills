@@ -1,0 +1,35 @@
+{
+  "name": "royal-navy",
+  "description": "既定テーマ。python-pptx=游明朝×ロイヤルネイビーのコンサル体裁 / PptxGenJS=游ゴシックのモダン体裁",
+  "colors": {
+    "navy_dark": "1B3A6B",
+    "navy_mid": "3D6098",
+    "blue_light": "7A9CC6",
+    "blue_pale": "B8CCE4",
+    "blue_ultra_pale": "D9E5F2",
+    "white": "FFFFFF",
+    "text_dark": "1A1A1A",
+    "text_gray": "767676",
+    "gray_light": "F5F7FA",
+    "accent_red": "C0392B",
+    "accent_green": "27AE60",
+    "accent_cyan": "2EC4C6"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": ["navy_dark", "navy_mid", "blue_light", "blue_pale", "text_gray"],
+    "pptxgenjs": ["navy_dark", "navy_mid", "blue_light", "accent_cyan", "blue_pale", "text_gray"]
+  }
+}

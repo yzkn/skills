@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>explainer-html コンポーネント見本</title>
+<style>
+/* =====================================================================
+   explainer-html デザインシステム（外部リクエスト 0 件・自己完結）
+   出典: mathbullet/skills の html スキル（MIT License）の document.css を
+   土台に、Web フォント依存の排除・ダークモード対応・pandoc skylighting
+   クラス対応・MathML 対応を加えて書き直したもの。
+   ===================================================================== */
+
+:root {
+  --mb-bg: #FAF9F6;
+  --mb-surface: #FFFFFF;
+  --mb-ink: #111110;
+  --mb-ink-body: #1A1A1A;
+  --mb-border: #111110;
+  --mb-rule: #DFDFDF;
+  --mb-muted: #595959;
+  --mb-faint: #A5A5A5;
+  --mb-link: #2990DA;
+  --mb-accent: #D63A2F;
+  --mb-code-bg: #F1EFE9;
+  --mb-diff-add-bg: #E6FFEC;
+  --mb-diff-add-fg: #1A7F37;
+  --mb-diff-del-bg: #FFEBE9;
+  --mb-diff-del-fg: #CF222E;
+  /* Web フォントを読み込まない。OS 同梱フォントへ順に解決する */
+  --mb-font-sans: "Noto Sans JP", "Yu Gothic UI", "Hiragino Sans", "Meiryo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mb-font-mono: "Cascadia Mono", "Consolas", "SFMono-Regular", Menlo, "Noto Sans Mono", monospace;
+  --mb-radius: 12px;
+  --mb-border-w: 1.5px;
+  color-scheme: light dark;
+}
+
+/* OS のダーク設定を既定の信号にする */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mb-bg: #161614;
+    --mb-surface: #1E1E1B;
+    --mb-ink: #F2F1EC;
+    --mb-ink-body: #E4E3DD;
+    --mb-border: #4A4945;
+    --mb-rule: #35342F;
+    --mb-muted: #A9A79F;
+    --mb-faint: #77756E;
+    --mb-link: #6FB8EE;
+    --mb-accent: #FF7A6E;
+    --mb-code-bg: #26251F;
+    --mb-diff-add-bg: #12331C;
+    --mb-diff-add-fg: #4EC26E;
+    --mb-diff-del-bg: #3A1A1A;
+    --mb-diff-del-fg: #F0736B;
+  }
+}
+
+/* 明示指定（ビューアのテーマ切替）は OS 設定より優先する */
+:root[data-theme="light"] {
+  --mb-bg: #FAF9F6; --mb-surface: #FFFFFF; --mb-ink: #111110; --mb-ink-body: #1A1A1A;
+  --mb-border: #111110; --mb-rule: #DFDFDF; --mb-muted: #595959; --mb-faint: #A5A5A5;
+  --mb-link: #2990DA; --mb-accent: #D63A2F; --mb-code-bg: #F1EFE9;
+  --mb-diff-add-bg: #E6FFEC; --mb-diff-add-fg: #1A7F37;
+  --mb-diff-del-bg: #FFEBE9; --mb-diff-del-fg: #CF222E;
+}
+:root[data-theme="dark"] {
+  --mb-bg: #161614; --mb-surface: #1E1E1B; --mb-ink: #F2F1EC; --mb-ink-body: #E4E3DD;
+  --mb-border: #4A4945; --mb-rule: #35342F; --mb-muted: #A9A79F; --mb-faint: #77756E;
+  --mb-link: #6FB8EE; --mb-accent: #FF7A6E; --mb-code-bg: #26251F;
+  --mb-diff-add-bg: #12331C; --mb-diff-add-fg: #4EC26E;
+  --mb-diff-del-bg: #3A1A1A; --mb-diff-del-fg: #F0736B;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--mb-bg); }
+
+body {
+  margin: 0;
+  background: var(--mb-bg);
+  color: var(--mb-ink-body);
+  font-family: var(--mb-font-sans);
+  font-size: 16px;
+  line-height: 1.9;
+  font-feature-settings: "palt";
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ---- ページ骨格 ---------------------------------------------------- */
+
+.mb-page { max-width: 1100px; margin: 0 auto; padding: 40px 48px 64px; }
+
+.mb-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 48px;
+  align-items: start;
+}
+
+.mb-main { min-width: 0; }
+
+aside.mb-glossary {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding-left: 24px;
+  border-left: var(--mb-border-w) solid var(--mb-rule);
+}
+
+@media (max-width: 1000px) {
+  .mb-page { padding: 24px 20px 48px; }
+  .mb-wrap { display: block; }
+  aside.mb-glossary {
+    position: static; max-height: none; padding-left: 0;
+    border-left: none; margin-bottom: 32px;
+  }
+}
+
+.mb-footer { margin-top: 64px; font-size: 12px; color: var(--mb-faint); }
+
+/* ---- 見出し --------------------------------------------------------- */
+
+h1, h2, h3, h4 { color: var(--mb-ink); font-weight: 700; line-height: 1.45; margin: 0; }
+
+h1 { font-size: 28px; border-left: 12px solid var(--mb-ink); padding-left: 18px; }
+h2 { font-size: 22px; border-left: 10px solid var(--mb-ink); padding-left: 14px; margin: 56px 0 16px; }
+h3 { font-size: 18px; margin: 36px 0 12px; }
+
+.mb-lede { margin: 16px 0 0; font-size: 16.5px; }
+
+.mb-meta-line {
+  margin: 4px 0 0;
+  font-family: var(--mb-font-mono);
+  font-size: 13px;
+  color: var(--mb-muted);
+}
+
+/* ---- 本文要素 -------------------------------------------------------- */
+
+p { margin: 12px 0; }
+
+a { color: var(--mb-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+strong { color: var(--mb-ink); }
+
+/* 赤の強調は 1 ページ 1 箇所までとする（em を強調色として使う） */
+em { font-style: normal; color: var(--mb-accent); font-weight: 700; }
+
+ul, ol { padding-left: 1.6em; margin: 12px 0; }
+ul { list-style: none; }
+ul > li { position: relative; }
+
+ul > li::before {
+  content: "";
+  position: absolute;
+  left: -1.15em;
+  top: 0.85em;
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 50%;
+  background: var(--mb-ink);
+}
+
+ul ul > li::before { width: 0.3em; height: 0.3em; top: 0.9em; background: var(--mb-muted); }
+
+hr { border: none; border-top: var(--mb-border-w) solid var(--mb-rule); margin: 40px 0; }
+
+/* ---- カード ---------------------------------------------------------- */
+
+.mb-card {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 20px 24px;
+  margin: 20px 0;
+}
+
+.mb-card > :first-child { margin-top: 0; }
+.mb-card > :last-child { margin-bottom: 0; }
+
+.mb-card-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--mb-ink);
+  border-bottom: var(--mb-border-w) solid var(--mb-border);
+  margin: -20px -24px 16px;
+  padding: 12px 24px;
+}
+
+/* .mb-card > :first-child の margin-top: 0 に負けないよう帯の食い込みを明示する */
+.mb-card > .mb-card-title:first-child { margin-top: -20px; }
+
+.mb-card-label { font-weight: 700; font-size: 14px; color: var(--mb-ink); margin: 0 0 8px; }
+
+.mb-grid-2, .mb-grid-3 { display: grid; gap: 20px; align-items: stretch; margin: 20px 0; }
+.mb-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mb-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mb-grid-2 > .mb-card, .mb-grid-3 > .mb-card { margin: 0; }
+
+@media (max-width: 1000px) {
+  .mb-grid-2, .mb-grid-3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- 要約ボックス ----------------------------------------------------- */
+
+.mb-summary {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 20px 24px;
+  margin: 24px 0;
+}
+
+.mb-summary::before {
+  content: "要点";
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--mb-ink);
+  margin-bottom: 8px;
+}
+
+.mb-summary > :last-child { margin-bottom: 0; }
+
+/* ---- 目次 ------------------------------------------------------------ */
+
+nav.mb-toc {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 16px 24px;
+  margin: 24px 0;
+}
+
+nav.mb-toc ol { list-style: none; counter-reset: toc; margin: 0; padding: 0; }
+nav.mb-toc > ol > li { counter-increment: toc; }
+
+nav.mb-toc > ol > li::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--mb-font-mono);
+  color: var(--mb-muted);
+  margin-right: 0.8em;
+}
+
+nav.mb-toc ol ol { padding-left: 2.6em; }
+nav.mb-toc a { color: var(--mb-ink-body); }
+nav.mb-toc a:hover { color: var(--mb-link); }
+
+/* ---- チップ（並列の固有名・分類名の列挙にだけ使う） ---------------------- */
+
+.mb-chip {
+  display: inline-block;
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: 8px;
+  padding: 0 0.6em;
+  font-size: 14px;
+  line-height: 1.7;
+  background: var(--mb-surface);
+  color: var(--mb-ink);
+  margin: 2px;
+}
+
+/* ---- 引用（原文と訳文を同じ文字サイズ・色で上下に並べる） ----------------- */
+
+blockquote.mb-quote {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 20px 28px;
+  margin: 24px 0;
+}
+
+blockquote.mb-quote::before {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 20px;
+  margin-bottom: 8px;
+  background: var(--mb-ink);
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 20"><path d="M0 20V11C0 5 3 1 9 0l1 3c-3 1-5 3-5 6h6v11H0zm15 0V11c0-6 3-10 9-11l1 3c-3 1-5 3-5 6h6v11H15z"/></svg>') no-repeat center / contain;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 20"><path d="M0 20V11C0 5 3 1 9 0l1 3c-3 1-5 3-5 6h6v11H0zm15 0V11c0-6 3-10 9-11l1 3c-3 1-5 3-5 6h6v11H15z"/></svg>') no-repeat center / contain;
+}
+
+blockquote.mb-quote .mb-quote-original { margin: 0 0 14px; }
+
+blockquote.mb-quote .mb-quote-ja {
+  border-top: var(--mb-border-w) solid var(--mb-rule);
+  padding-top: 14px;
+  margin: 0;
+}
+
+blockquote.mb-quote .mb-quote-source {
+  font-family: var(--mb-font-mono);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+/* ---- 用語リスト・表 ----------------------------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  background: var(--mb-surface);
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+th, td {
+  border: var(--mb-border-w) solid var(--mb-rule);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+th { color: var(--mb-ink); border-bottom: var(--mb-border-w) solid var(--mb-border); background: var(--mb-surface); }
+
+/* 行見出しのラベル列。折り返しを禁止し、残り幅を本文列へ譲る */
+th.mb-rowlabel, td.mb-rowlabel { white-space: nowrap; }
+
+/* 横に長い表は本文をはみ出させず、この枠内でスクロールさせる */
+.mb-table-scroll { overflow-x: auto; margin: 16px 0; }
+.mb-table-scroll > table { margin: 0; }
+
+aside.mb-glossary h2 { border-left: none; padding-left: 0; font-size: 16px; margin: 0 0 12px; }
+aside.mb-glossary table { font-size: 13.5px; }
+aside.mb-glossary th, aside.mb-glossary td { padding: 6px 8px; }
+
+/* ---- コード・等幅 ------------------------------------------------------ */
+
+code, kbd, samp { font-family: var(--mb-font-mono); font-size: 0.92em; }
+
+p code, li code, td code { background: var(--mb-code-bg); border-radius: 5px; padding: 0.08em 0.35em; }
+
+pre {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 16px 20px;
+  overflow-x: auto;
+  line-height: 1.6;
+  margin: 20px 0;
+}
+
+pre code { background: none; padding: 0; font-size: 13.5px; }
+
+/* ---- シンタックスハイライト（pandoc skylighting のクラス） ----------------
+   JS を読み込まない。pandoc がハイライト済みの <span class="..."> を
+   出力するので、その機能色だけをここで定義する。
+   ------------------------------------------------------------------------ */
+
+pre.sourceCode, div.sourceCode { margin: 20px 0; }
+div.sourceCode > pre { margin: 0; }
+code.sourceCode > span { display: inline; }
+
+/* コメント・注釈 */
+code span.co, code span.do, code span.an, code span.cv, code span.in {
+  color: var(--mb-muted); font-style: italic;
+}
+/* キーワード・制御構文・型・組み込み */
+code span.kw, code span.cf, code span.dt, code span.bu {
+  color: var(--mb-link); font-weight: 700;
+}
+/* 文字列・数値リテラル */
+code span.st, code span.ch, code span.vs, code span.ss,
+code span.dv, code span.bn, code span.fl, code span.sc {
+  color: var(--mb-accent);
+}
+/* 関数名・定数・属性 */
+code span.fu, code span.cn, code span.at { color: var(--mb-ink); font-weight: 700; }
+/* 変数・演算子・その他 */
+code span.va, code span.op, code span.pp, code span.ex { color: var(--mb-ink-body); }
+/* エラー・警告 */
+code span.er, code span.wa { color: var(--mb-accent); text-decoration: underline; }
+
+/* ---- 図 ---------------------------------------------------------------- */
+
+figure.mb-figure { margin: 24px 0; text-align: center; }
+
+figure.mb-figure svg { max-width: 100%; height: auto; }
+
+/* 自作図は黒一色の線画を基本とする。ダーク時に線が消えないよう反転させる */
+.mb-figure-frame svg { color: var(--mb-ink); }
+.mb-figure-frame svg [stroke="#000"], .mb-figure-frame svg [stroke="black"] { stroke: currentColor; }
+.mb-figure-frame svg [fill="#000"], .mb-figure-frame svg [fill="black"] { fill: currentColor; }
+
+figure.mb-figure img { max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 6px; }
+
+figure.mb-figure figcaption {
+  font-family: var(--mb-font-mono);
+  font-size: 13px;
+  color: var(--mb-muted);
+  margin-top: 8px;
+  text-align: center;
+}
+
+.mb-figure-frame {
+  background: var(--mb-surface);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: var(--mb-radius);
+  padding: 24px;
+}
+
+/* ---- コード差分（緑・赤は意味を区別する機能色。1 ページ 1 箇所の制限外） ---- */
+
+pre.mb-diff {
+  padding: 12px 0;
+  /* span 間の改行テキストノードが空行にならないよう、行スパン側だけ pre にする */
+  white-space: normal;
+}
+
+pre.mb-diff .add, pre.mb-diff .del, pre.mb-diff .ctx {
+  display: block;
+  white-space: pre;
+  padding: 1px 20px 1px 8px;
+}
+
+pre.mb-diff .add::before, pre.mb-diff .del::before, pre.mb-diff .ctx::before {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--mb-muted);
+}
+
+pre.mb-diff .add { background: var(--mb-diff-add-bg); }
+pre.mb-diff .add::before { content: "+"; color: var(--mb-diff-add-fg); }
+pre.mb-diff .del { background: var(--mb-diff-del-bg); }
+pre.mb-diff .del::before { content: "-"; color: var(--mb-diff-del-fg); }
+pre.mb-diff .ctx::before { content: " "; }
+
+/* ---- 数式（MathML。外部ライブラリを読み込まない） ------------------------ */
+
+math { font-size: 1.05em; }
+math[display="block"] { display: block; margin: 0 auto; overflow-x: auto; }
+
+.mb-math-block { position: relative; margin: 20px 0; text-align: center; }
+
+.mb-math-copy {
+  font-family: var(--mb-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 1px 8px;
+  background: var(--mb-surface);
+  color: var(--mb-ink);
+  border: var(--mb-border-w) solid var(--mb-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.mb-math-copy:hover { background: var(--mb-rule); }
+
+.mb-math-block > .mb-math-copy { position: absolute; top: 50%; right: 0; transform: translateY(-50%); }
+
+.mb-math-inline > .mb-math-copy { display: none; margin-left: 4px; vertical-align: middle; }
+.mb-math-inline:hover > .mb-math-copy,
+.mb-math-inline:focus-within > .mb-math-copy { display: inline-block; }
+
+/* ---- 印刷 --------------------------------------------------------------- */
+
+@media print {
+  @page { size: A4; margin: 15mm; }
+
+  html, body {
+    font-size: 10.5pt;
+    line-height: 1.55;
+    background: #FFFFFF;
+    color: #000000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 印刷はダーク配色を持ち込まない */
+  :root {
+    --mb-bg: #FFFFFF; --mb-surface: #FFFFFF; --mb-ink: #000000; --mb-ink-body: #1A1A1A;
+    --mb-border: #000000; --mb-rule: #CCCCCC; --mb-muted: #555555; --mb-code-bg: #F1EFE9;
+  }
+
+  .mb-page { max-width: none; padding: 0; }
+  .mb-wrap { display: block; }
+
+  aside.mb-glossary {
+    position: static; max-height: none; overflow: visible;
+    padding-left: 0; border-left: none;
+    margin-top: 24px; padding-top: 16px; border-top: 2px solid #000;
+    break-before: page; page-break-before: always;
+  }
+
+  h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+
+  .mb-card, .mb-summary, blockquote.mb-quote, figure.mb-figure,
+  nav.mb-toc, table, tr, pre, .mb-lede {
+    break-inside: avoid; page-break-inside: avoid;
+  }
+
+  .mb-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  a { color: #000; text-decoration: none; }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    font-family: var(--mb-font-mono);
+    word-break: break-all;
+  }
+
+  .mb-math-copy { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="mb-page">
+  <h1>explainer-html コンポーネント見本</h1>
+  <p class="mb-lede">このページは <code>assets/template.html</code> のデザインシステムが正しく描画されるかをブラウザで確認するための見本です。外部リクエストは 0 件で、ファイルを直接ブラウザにドラッグするだけで開けます。</p>
+  <p class="mb-meta-line">2026-08-03 / .claude/skills/explainer-html/assets/sample.html</p>
+
+  <!-- 見本専用: OS のテーマ設定を変えずにダーク/ライトを切り替える。実際の文書には入れない -->
+  <p><button type="button" class="mb-math-copy" id="theme-toggle">テーマを切り替える（見本専用）</button></p>
+
+  <div class="mb-summary">
+    <p>確認する観点は 4 つです。(1) ライトとダークの両方で文字と罫線が読めるか、(2) 数式が組版されているか（LaTeX の生文字列が見えていないか）、(3) コードに色が付いているか、(4) 印刷プレビューで 1 カラムに落ちるか。</p>
+  </div>
+
+  <nav class="mb-toc" aria-label="目次">
+    <ol>
+      <li><a href="#s1">文章まわりの部品</a></li>
+      <li><a href="#s2">図と数式</a></li>
+      <li><a href="#s3">コードと差分</a></li>
+    </ol>
+  </nav>
+
+  <div class="mb-wrap">
+    <main class="mb-main">
+
+      <h2 id="s1">文章まわりの部品</h2>
+
+      <p>本文の標準スタイルです。<strong>strong は地色の濃い文字</strong>、<em>em はアクセント赤</em>（1 ページ 1 箇所まで）、<code>code</code> は等幅に淡い背景、<a href="#s2">リンクは青</a>です。箇条書きの行頭記号は CSS が描く円で、絵文字を使いません。</p>
+
+      <ul>
+        <li>第 1 階層の項目
+          <ul><li>第 2 階層は小さい灰色の点になる</li></ul>
+        </li>
+        <li>行頭記号はテキストに書かない</li>
+      </ul>
+
+      <h3>カードとグリッド</h3>
+
+      <div class="mb-card">
+        <div class="mb-card-title">見出し付きカード</div>
+        <p>帯付きのカードです。帯は <code>.mb-card-title</code> で、カード枠に食い込みます。</p>
+      </div>
+
+      <div class="mb-grid-2">
+        <div class="mb-card">
+          <p class="mb-card-label">案 A: 自己完結</p>
+          <p>外部リクエスト 0 件。オフラインでも社内プロキシ下でも同じ見た目になります。</p>
+        </div>
+        <div class="mb-card">
+          <p class="mb-card-label">案 B: CDN 依存</p>
+          <p>実装は軽いものの、Artifact の CSP でブロックされ、オフラインで崩れます。</p>
+        </div>
+      </div>
+
+      <h3>チップ</h3>
+
+      <p>並列の固有名・分類名の列挙にだけ使います。強調や装飾には使いません。</p>
+      <p>
+        <span class="mb-chip">pandoc 3.10</span>
+        <span class="mb-chip">PyMuPDF 1.27.2.3</span>
+        <span class="mb-chip">MathML</span>
+        <span class="mb-chip">skylighting</span>
+      </p>
+
+      <h3>表</h3>
+
+      <p>短い対応関係に使い、3 列までを基本とします。行見出しには <code>.mb-rowlabel</code> を付けて折り返しを止めます。</p>
+
+      <table>
+        <thead><tr><th>要素</th><th>実装</th><th>外部依存</th></tr></thead>
+        <tbody>
+          <tr><td class="mb-rowlabel">数式</td><td>MathML（ブラウザがネイティブ描画）</td><td>なし</td></tr>
+          <tr><td class="mb-rowlabel">ハイライト</td><td>pandoc skylighting の出力を埋め込む</td><td>なし</td></tr>
+          <tr><td class="mb-rowlabel">フォント</td><td>OS 同梱フォントのスタック</td><td>なし</td></tr>
+        </tbody>
+      </table>
+
+      <p>横に長い表は <code>.mb-table-scroll</code> で囲み、ページ本体を横スクロールさせません。</p>
+
+      <div class="mb-table-scroll">
+        <table>
+          <thead><tr><th>項目</th><th>2026-04</th><th>2026-05</th><th>2026-06</th><th>2026-07</th><th>2026-08</th><th>備考</th></tr></thead>
+          <tbody>
+            <tr><td class="mb-rowlabel">要件定義</td><td>完了</td><td>—</td><td>—</td><td>—</td><td>—</td><td>承認済み</td></tr>
+            <tr><td class="mb-rowlabel">基本設計</td><td>—</td><td>着手</td><td>完了</td><td>—</td><td>—</td><td>レビュー 2 回</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>引用</h3>
+
+      <p>原文と訳文を同じ文字サイズ・色で上下に並べます。典拠参照の形式は <code>/citation-format</code> に従います。</p>
+
+      <blockquote class="mb-quote">
+        <p class="mb-quote-original">The system SHALL retain audit logs for a minimum of 90 days.</p>
+        <p class="mb-quote-ja">システムは監査ログを最低 90 日間保持しなければならない。</p>
+        <p class="mb-quote-source">[ACME-SEC-STD (2026/03), Section 4.1]</p>
+      </blockquote>
+
+      <h2 id="s2">図と数式</h2>
+
+      <h3>インライン SVG の図</h3>
+
+      <p>自作図は黒一色の線画を基本とし、線色に <code>currentColor</code> を使います。ダークモードでも線が消えません。</p>
+
+      <figure class="mb-figure">
+        <div class="mb-figure-frame">
+          <svg viewBox="0 0 460 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Markdown 正本から派生物を生成する流れ">
+            <g fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="20" y="20" width="150" height="52" rx="8"/>
+              <rect x="20" y="130" width="150" height="52" rx="8"/>
+              <rect x="290" y="75" width="150" height="52" rx="8"/>
+              <path d="M170 46 H230 V101 H286"/>
+              <path d="M170 156 H230 V101"/>
+              <path d="M278 96 l8 5 -8 5" stroke-linejoin="round"/>
+            </g>
+            <g fill="currentColor" font-size="13" font-family="sans-serif">
+              <text x="36" y="51">Markdown 正本</text>
+              <text x="36" y="161">図・表の素材</text>
+              <text x="306" y="106">納品用の派生物</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>図 1: 正本から派生物を生成する流れ</figcaption>
+      </figure>
+
+      <h3>数式（MathML）</h3>
+
+      <p>下の数式が <code>E = mc^2</code> という生の文字列ではなく組版された形で見えていれば、ブラウザの MathML 描画が効いています。数式にカーソルを合わせると LaTeX 原文のコピーボタンが出ます。</p>
+
+      <div class="mb-math-block" data-latex="E = mc^2">
+        <math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">E = mc^2</annotation></semantics></math>
+      </div>
+
+      <p>インライン数式は <span class="mb-math-inline" data-latex="\alpha + \beta"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>+</mo><mi>β</mi></mrow><annotation encoding="application/x-tex">\alpha + \beta</annotation></semantics></math></span> のように地の文へ埋め込みます。上の 2 つはいずれも <code>pandoc -f markdown -t html --mathml</code> の実出力です。</p>
+
+      <h2 id="s3">コードと差分</h2>
+
+      <h3>シンタックスハイライト</h3>
+
+      <p>以下は <code>pandoc -f markdown -t html</code> の実出力をそのまま貼ったものです。キーワードが青、文字列が赤、コメントが灰色の斜体になっていればテンプレートの CSS が効いています。</p>
+
+      <div class="sourceCode" id="cb1"><pre
+      class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> greet(name: <span class="bu">str</span>) <span class="op">-&gt;</span> <span class="bu">str</span>:</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 呼び出し元へ挨拶文を返す</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;hello </span><span class="sc">{</span>name<span class="sc">}</span><span class="ss">&quot;</span></span></code></pre></div>
+
+      <p>ハイライトが不要な場合は素の <code>pre</code> で足ります。</p>
+
+      <pre><code>python .claude/scripts/pdf/extract_figures.py 受領資料.pdf --out report/figures</code></pre>
+
+      <h3>コード差分</h3>
+
+      <p>差分を示す前に、何をなぜ変えたかを散文で説明します。ここでは、設定値が未指定のときに <code>undefined</code> が伝播していたため、既定値へ落とす処理を加えました。</p>
+
+      <pre class="mb-diff"><span class="ctx">function apply(config) {</span><span class="del">  return config.value;</span><span class="add">  return config.value ?? DEFAULT_VALUE;</span><span class="ctx">}</span></pre>
+
+      <h3>確認が済んだら</h3>
+
+      <p>このページで崩れが見つかった場合は、原因を <code>assets/template.html</code> の <code>&lt;style&gt;</code> 側で直します。見本ページだけを直すと両者がずれます。修正後は <code>scripts/build_sample.py</code> を実行して見本を作り直してください。</p>
+
+    </main>
+
+    <aside class="mb-glossary">
+      <h2>用語</h2>
+      <table>
+        <thead><tr><th>用語</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td class="mb-rowlabel">MathML</td><td>数式を表す HTML 標準のマークアップ。主要ブラウザが外部ライブラリなしで組版する。</td></tr>
+          <tr><td class="mb-rowlabel">skylighting</td><td>pandoc に内蔵されたシンタックスハイライト機構。色付けを済ませた HTML を出力する。</td></tr>
+          <tr><td class="mb-rowlabel">CSP</td><td>Content Security Policy。ページが読み込める外部リソースをブラウザ側で制限する仕組み。</td></tr>
+          <tr><td class="mb-rowlabel">自己完結</td><td>CSS・JS・画像をすべて 1 つの HTML に内包し、外部リクエストを 0 件にした状態。</td></tr>
+        </tbody>
+      </table>
+    </aside>
+  </div>
+
+  <p class="mb-footer">explainer-html スキルの見本ページ / CSS の正本は assets/template.html</p>
+</div>
+
+<script>
+// 見本専用: <html data-theme> を切り替えてダークとライトの両方を確認する
+document.getElementById('theme-toggle').addEventListener('click', function () {
+  var root = document.documentElement;
+  var now = root.getAttribute('data-theme');
+  if (!now) {
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    now = prefersDark ? 'dark' : 'light';
+  }
+  root.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+});
+</script>
+</body>
+</html>

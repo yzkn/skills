@@ -1,0 +1,88 @@
+# /slides-maker — マニュアル
+
+## 1. 前提
+
+| 項目 | 内容 |
+|---|---|
+| 対象 | Claude Code（CLI / VS Code 拡張 / デスクトップアプリ） |
+| 検証環境 | Windows 11 Pro / PowerShell 5.1 と 7.x / Python 3.14 / Git Bash |
+| 文字コード | すべて UTF-8。`.ps1` は **BOM 必須**、`.sh` は **BOM 禁止・改行 LF** |
+| 前提ツール | Python 3.x・Node.js + npm・pandoc |
+
+## 2. 収録物
+
+| パス | サイズ | 役割 |
+|---|---|---|
+| `skills/slides-maker/SKILL.md` | 13.5 KB | スキル本体（frontmatter の `description` で自動適用される） |
+| `skills/slides-maker/references/design-system-pptxgenjs.md` | 7.5 KB | — |
+| `skills/slides-maker/references/design-system.md` | 7.2 KB | — |
+| `skills/slides-maker/themes/glacier.json` | 1.1 KB | データ・設定 |
+| `skills/slides-maker/themes/graphite.json` | 1.1 KB | データ・設定 |
+| `skills/slides-maker/themes/indigo.json` | 1.1 KB | データ・設定 |
+| `skills/slides-maker/themes/royal-navy.json` | 1.0 KB | データ・設定 |
+| `skills/slides-maker/themes/sunrise.json` | 1.1 KB | データ・設定 |
+| `skills/slides-maker/themes/terracotta.json` | 1.1 KB | データ・設定 |
+
+## 3. 導入手順
+
+```sh
+# 導入先のプロジェクトルートで実行する
+mkdir -p .claude/skills
+cp -r skills/slides-maker .claude/skills/
+```
+
+**スキルは必ずディレクトリ形式（`.claude/skills/slides-maker/SKILL.md`）で置く。** フラットな `.md` として置くとスキル登録機構に載らず、自動適用も `/slides-maker` での呼び出しもできない。
+
+### 3-1. 呼び出し方
+
+- 自動適用: frontmatter の `description` に一致する依頼があったとき
+- 明示呼び出し: `/slides-maker`
+
+**自動適用は `description` だけでは安定しない。** 元リポジトリでの実測では、発動を左右するのは説明文の充実度より**常時適用ルールからスキル名を名指しすること**だった。確実に使いたい場合は、導入先の `CLAUDE.md` かルールから `/slides-maker` を名指しする。
+
+## 4. 内容の構成
+
+本体（`skills/slides-maker/SKILL.md`）の見出し構成:
+
+- 前提確認
+- 手順
+  - Step 1: プロンプトを解析する
+  - Step 2: スライド構成を決定する
+  - Step 3: slides.json を生成してスクラッチパッドに保存する
+  - Step 4: エンジンの選択と出力パスの決定
+  - Step 5: 選択したエンジンでレンダリングする
+  - Step 6: QA チェック
+  - Step 7: 結果を報告する
+- 注意事項
+  - 画像埋め込みに関する注意事項
+
+## 5. 導入後の検証
+
+- `/slides-maker` で明示呼び出しできるか（できない場合はディレクトリ形式・frontmatter の `name` を確認する）
+- 自動適用されるか（`description` に一致する依頼文で試す）
+
+## 6. 既知の制約
+
+- 本文が切り出し元のディレクトリ構成（`design/`・`report/`・`task/` 等）を前提にしている箇所がある
+
+## 7. 出典と経緯
+
+| 項目 | 内容 |
+|---|---|
+| 切り出し元 | `claudecode-pm-starter-kit` / `.claude/skills/slides-maker/` |
+| 元の格納先 | `.claude/skills/slides-maker/` |
+| 出典 | 本リポジトリ独自 |
+| 公開区分 | 🟢 公開可（本リポジトリ独自） |
+
+### 作成の経緯（切り出し元の記録より）
+
+**作成の経緯は記録されていない。** この項目はキット初期構成（2026-06-02〜06-25）に含まれ、追加コミットのメッセージが 1 行のため動機が残っていない。失敗や不具合が契機だったという記録もない。
+
+## 8. 公開前チェック
+
+このパッケージを GitHub で公開する前に、次を確認する。
+
+1. `LICENSE` の著作権表示が `Copyright 2026 YA` になっていること（切り出し時に記入済み。切り出し元の `LICENSE` は雛形のままなので、再生成時はこの置換が効いているか確認する）
+2. 本文に組織固有の情報（顧客名・社内システム名・社内文書の内部構造・個人情報）が残っていないか
+3. 第三者由来の場合、原典の LICENSE 同梱と帰属表示が保たれているか
+4. 元リポジトリのパスへの参照（README の「単体利用時の注意」）を読み替え済みか

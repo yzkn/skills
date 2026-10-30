@@ -1,0 +1,54 @@
+#!/bin/sh
+
+# Gitleaks による情報漏洩検知
+
+# PATH から gitleaks を探す
+GITLEAKS=$(command -v gitleaks 2>/dev/null)
+
+# 見つからない場合は winget のインストール先を検索する（Windows 環境向け）
+if [ -z "$GITLEAKS" ] && [ -n "$LOCALAPPDATA" ]; then
+  LOCALAPPDATA_UNIX=$(echo "$LOCALAPPDATA" | sed 's|\\|/|g; s|^\([A-Za-z]\):|/\L\1|')
+  for f in "$LOCALAPPDATA_UNIX/Microsoft/WinGet/Packages/Gitleaks.Gitleaks_"*/gitleaks.exe; do
+    if [ -f "$f" ]; then
+      GITLEAKS="$f"
+      break
+    fi
+  done
+fi
+
+if [ -z "$GITLEAKS" ]; then
+  echo "ERROR: gitleaks が見つかりません。以下のコマンドでインストールしてください:"
+  echo "  Windows: winget install Gitleaks.Gitleaks"
+  echo "  macOS:   brew install gitleaks"
+  exit 1
+fi
+
+"$GITLEAKS" protect --staged -v --config .gitleaks.toml
+if [ $? -ne 0 ]; then
+  echo "Gitleaks: this commit contains a secret"
+  exit 1
+fi
+
+# 不可視 Unicode 文字の検知（Rules File Backdoor 対策）
+# CLAUDE.md・ルールファイル等に不可視文字で悪意ある指示を埋め込む攻撃
+# （ゼロ幅スペース・Word Joiner・双方向制御文字）をコミット前に検出する。
+# 絵文字の結合に正当に使われる ZWJ (U+200D) / ZWNJ (U+200C) は誤検知防止のため対象外。
+INVISIBLE_PATTERN='[\x{200B}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{2069}]'
+FOUND_INVISIBLE=0
+for f in $(git diff --cached --name-only --diff-filter=ACM); do
+  # テキスト系ファイルのみ対象（バイナリはスキップ）
+  case "$f" in
+    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.ps1|*.py|*.js|*.ts|*.sh|*.cs|*.xml|*.html|*.css)
+      if git show ":$f" | grep -qP "$INVISIBLE_PATTERN" 2>/dev/null; then
+        echo "WARNING: 不可視 Unicode 文字（ゼロ幅スペース・双方向制御文字等）を検出: $f"
+        git show ":$f" | grep -nP "$INVISIBLE_PATTERN" | head -5
+        FOUND_INVISIBLE=1
+      fi
+      ;;
+  esac
+done
+if [ $FOUND_INVISIBLE -ne 0 ]; then
+  echo "不可視文字による指示の埋め込み（Rules File Backdoor）の可能性があります。"
+  echo "意図的な使用であれば git commit --no-verify で回避できます（ユーザー自身の判断で実行）。"
+  exit 1
+fi

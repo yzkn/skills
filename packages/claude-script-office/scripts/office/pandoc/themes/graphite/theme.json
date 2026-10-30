@@ -1,0 +1,28 @@
+{
+  "_display_name": "graphite テーマ",
+  "_note": "厳粛（グラファイト）。slides-maker の同名テーマと同一パレット（管理は別系統）",
+  "slide_size": {
+    "cx": 12192000,
+    "cy": 6858000
+  },
+  "fonts": {
+    "major_latin": "游明朝",
+    "major_ea": "游明朝",
+    "minor_latin": "游ゴシック",
+    "minor_ea": "游ゴシック"
+  },
+  "colors": {
+    "dk1": "1A1A1A",
+    "lt1": "FFFFFF",
+    "dk2": "2E2E38",
+    "lt2": "E9E9EE",
+    "accent1": "51515E",
+    "accent2": "84848F",
+    "accent3": "A67C00",
+    "accent4": "3A6B35",
+    "accent5": "8C1D18",
+    "accent6": "C4C4CC",
+    "hlink": "0563C1",
+    "folHlink": "954F72"
+  }
+}

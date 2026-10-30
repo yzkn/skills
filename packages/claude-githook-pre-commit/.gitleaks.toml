@@ -1,0 +1,136 @@
+[extend]
+useDefault = true
+
+# ISO/IEC 29500-4 XSD スキーマファイル内のゼロ埋め GUID は仕様上のデフォルト値
+[[allowlists]]
+description = "ISO/IEC 29500-4 XML Schema files (anthropics skills)"
+paths = [
+  '''.claude/skills/anthropics/.*/schemas/ISO-IEC29500-4_2016/.*\.xsd'''
+]
+
+[[rules]]
+id = "my-number"
+description = "マイナンバー（個人番号・12桁）"
+regex = '''\b\d{12}\b'''
+keywords = ["マイナンバー", "個人番号", "my_number", "mynumber"]
+
+[[rules]]
+id = "corporate-number"
+description = "法人番号（13桁）"
+regex = '''\b[1-9]\d{12}\b'''
+keywords = ["法人番号", "corporate_number", "houjin"]
+
+[[rules]]
+id = "credit-card"
+description = "クレジットカード番号"
+regex = '''\b(?:\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}|\d{4}[ -]?\d{6}[ -]?\d{5})\b'''
+
+[[rules]]
+id = "fixed-phone-number"
+description = "固定電話番号"
+regex = '''0\d{1,4}-\d{1,4}-\d{4}'''
+keywords = ["tel", "phone", "電話", "固定", "fax", "ファックス"]
+
+[[rules]]
+id = "mobile-phone-number"
+description = "携帯電話番号"
+regex = '''0[26789]0-?\d{4}-?\d{4}'''
+keywords = ["携帯", "スマホ", "スマートフォン", "020", "060", "070", "080", "090"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API キー (sk-ant-...)"
+regex = '''sk-ant-api[0-9]{2}-[A-Za-z0-9_\-]{93}[A-Z]{2}'''
+keywords = ["sk-ant"]
+
+[[rules]]
+id = "connection-string-password"
+description = "接続文字列内のパスワード"
+regex = '''(?i)(jdbc:|Data Source=|Server=)[^\s"']*[Pp]assword=[^;\s"']{4,}'''
+keywords = ["jdbc", "datasource", "connectionstring"]
+
+# data-modeler（本体・参照ファイル）、Dataverse・データ設計・テーブル設計.md 、スキルのトリガー精度を測るskill-evalリポートのコード表記例（9999-9999-9999-9999 等）はコード設計の説明用サンプル値
+[[allowlists]]
+description = "data-modeler agent — コード表記の説明用サンプル値"
+paths = [
+  '''\.claude/agents/data-modeler\.md''',
+  '''\.claude/references/data-modeler-reference\.md''',
+  '''guide/for-llm/YAコーディング標準/11_Dataverse・データ設計・テーブル設計\.md''',
+  '''report/skill-eval/20260831_082955_vnl\.json'''
+]
+rules = ["credit-card"]
+
+# JavaScript の Number.MAX_SAFE_INTEGER（2^53-1）と 2^53 は 16 桁のため credit-card ルールに一致してしまう。
+# JSON Schema の maximum / minimum に頻出する定数であり、カード番号ではない（Luhn チェックも通らない）。
+# 値を限定して除外するため、これらの定数以外のカード番号検出能力は維持される。
+# 追加の経緯・パス単位除外を採らなかった理由は doc/adr/20260820_025_gitleaks誤検知の除外方針.md を参照。
+[[allowlists]]
+description = "2^53-1 (Number.MAX_SAFE_INTEGER) と 2^53 — JSON Schema の maximum/minimum 定数"
+regexes = [
+  '''9007199254740991''',
+  '''9007199254740992'''
+]
+rules = ["credit-card"]
+
+# 連番のダミー値。credit-card ルールは区切り記号（空白・ハイフン）を許容するため、
+# 区切りを入れても一致する。区切りの有無を問わず除外するので、実在のカード番号の検出能力は維持される。
+# 証跡（doc/prompt/）は【絶対禁止】で編集できず、値を書き換える対処が採れないため除外側で対応する。
+# 1/3 と 2/3 を IEEE754 の倍精度で書き下した循環小数。小数部が 16 桁の数字列になるため
+# credit-card ルールに一致する（全桁同一で直前が "0." であり、カード番号ではない）。
+# トリガー評価の trigger_rate に現れる。生成源は丸めるよう直したが（ADR-038）、
+# 修正前の値が証跡（doc/prompt/）に記録済みで、証跡は【絶対禁止】で編集できないため除外する。
+[[allowlists]]
+description = "1/3・2/3 の循環小数（試行 3 回のトリガー評価が出す trigger_rate）"
+regexes = [
+  '''3333333333333333''',
+  '''6666666666666666'''
+]
+rules = ["credit-card"]
+
+[[allowlists]]
+description = "連番のダミーカード番号（規約・検出ルールの説明で使った例示値）"
+regexes = [
+  '''1234[ -]?5678[ -]?9012[ -]?3456'''
+]
+rules = ["credit-card"]
+
+# 局番 0000 は日本の電話番号として未割当であり、実在の加入者番号は一致しない。
+# `/vnl testdata` はこの帯だけを生成するため、生成したフィクスチャをそのままコミットできる。
+# 値ではなくパターンでの登録だが、通常の局番を持つ番号の検出能力は維持される。
+[[allowlists]]
+description = "局番 0000（未割当）のダミー電話番号 — /vnl testdata が生成する形式"
+regexes = [
+  '''0\d{1,3}-?0000-?\d{4}'''
+]
+rules = ["mobile-phone-number", "fixed-phone-number"]
+
+# ISBN-13 / EAN-13 の公知テスト値は 13 桁のため corporate-number ルール（\b[1-9]\d{12}\b）に一致してしまう。
+# `/vnl` の checkdigit selftest が実装検証に使う値であり、法人番号ではない。
+# 値を限定して除外するため、これらの定数以外の法人番号検出能力は維持される（ADR-025 の方針と同じ形）。
+# 証跡（doc/prompt/・doc/adr/）は【絶対禁止】で編集できず、値を書き換える対処が採れないため
+# 除外側で対応する。経緯は doc/adr/20260827_034_ADR-033の影響節を追補しallow追加の実施を記録.md を参照。
+[[allowlists]]
+description = "ISBN-13 / EAN-13 の公知テスト値（checkdigit selftest の検証用）と連番のダミー値"
+regexes = [
+  '''9780306406157''',
+  '''9780306406158''',
+  '''1234567890123''',
+  '''5012345678909'''
+]
+rules = ["corporate-number"]
+
+# トリガー評価（.claude/scripts/skill-eval/）のフィクスチャに置くダミー JWT。
+# 実測（gitleaks 8.30.1・[extend] useDefault = true）では既定ルールセットはこの値を検出せず、
+# この allowlist は現時点では不要である。それでも登録しておくのは、この値が編集できない証跡
+# （doc/prompt/）に既に記録されており、将来 gitleaks の jwt ルールが厳しくなった場合に
+# 証跡が原因でコミットが塞がるのを、除外なしでは防げないためである
+# （`.claude/rules/git-safety.md`「一度その文字列が証跡へ記録されると後から取り消せない」）。
+# 署名部は "not-a-real-signature" を Base64URL にした固定値で検証不能であり、秘密を含まない。
+# 値を限定しているため他の JWT の検出能力は損なわない（ADR-025 の方針と同じ形）。
+# 生成は .claude/scripts/skill-eval/make_fixtures.py（決定論的・再実行しても同一の値）。
+[[allowlists]]
+description = "トリガー評価フィクスチャのダミー JWT（署名は無効な固定値）"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiJldmFsLWZpeHR1cmUiLCJuYW1lIjoidHJpZ2dlciBldmFsIGZpeHR1cmUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTgwMDAwMDAwMH0\.bm90LWEtcmVhbC1zaWduYXR1cmU'''
+]
+rules = ["jwt"]

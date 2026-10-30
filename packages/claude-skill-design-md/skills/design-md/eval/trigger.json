@@ -1,0 +1,19 @@
+[
+  {"query": "この案件のデザイントークンを DESIGN.md にまとめてください。", "should_trigger": true},
+  {"query": "design/03_basic_design/DESIGN.md の構造が仕様どおりか検証してください。", "should_trigger": true},
+  {"query": "カラーとタイポグラフィのトークンを、エージェントが読める単一ファイルの正本にしたいです。", "should_trigger": true},
+  {"query": "既存の tailwind.config.js からデザインシステムの正本を起こしてください。", "should_trigger": true},
+  {"query": "design-system/MASTER.md を DESIGN.md 形式に寄せてください。", "should_trigger": true},
+  {"query": "DESIGN.md に Do's and Don'ts の節が抜けていないか確認して、足りなければ追記してください。", "should_trigger": true},
+  {"query": "デザインシステムの正本が古いので、いまの CSS 変数に合わせて更新したいです。", "should_trigger": true},
+  {"query": "画面の CSS が古いので、実装を今のデザインに合わせて直してください。", "should_trigger": false},
+  {"query": "この DESIGN.md、front matter のキー名が仕様に合っているか見てもらえますか。", "should_trigger": true},
+  {"query": "fintech のダッシュボードに合う配色パレットを提案してください。", "should_trigger": false},
+  {"query": "この参考サイトの URL を見て、何がこのデザインを成立させているか分析してください。", "should_trigger": false},
+  {"query": "作った画面が AI っぽい見た目になっていないか監査してください。", "should_trigger": false},
+  {"query": "ログイン画面のアクセシビリティを WCAG 2.1 の観点でレビューしてください。", "should_trigger": false},
+  {"query": "見出しと本文のフォントの組み合わせを 3 案出してください。", "should_trigger": false},
+  {"query": "#767676 と #ffffff のコントラスト比を計算してください。", "should_trigger": false},
+  {"query": "開発者ハンドオフ用の高精度 HTML モックアップを作ってください。", "should_trigger": false},
+  {"query": "README.md の構成をレビューしてください。", "should_trigger": false}
+]

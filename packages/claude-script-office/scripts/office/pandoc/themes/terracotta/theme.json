@@ -1,0 +1,28 @@
+{
+  "_display_name": "terracotta テーマ",
+  "_note": "暖色系（テラコッタ）。slides-maker の同名テーマと同一パレット（管理は別系統）",
+  "slide_size": {
+    "cx": 12192000,
+    "cy": 6858000
+  },
+  "fonts": {
+    "major_latin": "游明朝",
+    "major_ea": "游明朝",
+    "minor_latin": "游ゴシック",
+    "minor_ea": "游ゴシック"
+  },
+  "colors": {
+    "dk1": "2B1D18",
+    "lt1": "FFFFFF",
+    "dk2": "9A3B26",
+    "lt2": "F3D9CC",
+    "accent1": "C0603F",
+    "accent2": "D98E6A",
+    "accent3": "D9A441",
+    "accent4": "2E7D32",
+    "accent5": "B71C1C",
+    "accent6": "EFC4AE",
+    "hlink": "0563C1",
+    "folHlink": "954F72"
+  }
+}

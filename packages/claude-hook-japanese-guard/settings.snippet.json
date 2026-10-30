@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/japanese-guard.ps1 2>doc/log/error/japanese-guard-stderr.log"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "indigo",
+  "description": "理知的（インディゴ）。royal-navy の配色バリエーション（フォント・レイアウトは共通）",
+  "colors": {
+    "navy_dark": "383070",
+    "navy_mid": "5A55A0",
+    "blue_light": "8E8AC6",
+    "blue_pale": "C7C5E4",
+    "blue_ultra_pale": "ECEBF6",
+    "white": "FFFFFF",
+    "text_dark": "1C1B29",
+    "text_gray": "75738C",
+    "gray_light": "F5F5FA",
+    "accent_red": "C0392B",
+    "accent_green": "2E9E6B",
+    "accent_cyan": "5AB0D8"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "blue_pale",
+      "text_gray"
+    ],
+    "pptxgenjs": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "accent_cyan",
+      "blue_pale",
+      "text_gray"
+    ]
+  }
+}

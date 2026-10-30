@@ -1,0 +1,19 @@
+[
+  {"query": "そろそろコンテキストが厳しいので、別のセッションで続きをやれるように引き継ぎ文書を書いてください。", "should_trigger": true},
+  {"query": "この作業、明日は別の担当が続きをやります。今日の内容を引き継げる形でまとめてください。", "should_trigger": true},
+  {"query": "新しいセッションを開いて続きをやりたいです。次のエージェントが読むための引き継ぎメモを作ってください。", "should_trigger": true},
+  {"query": "いったんここで区切ります。次に再開するときに読むだけで状況が分かる文書を残しておいて。", "should_trigger": true},
+  {"query": "会話が長くなったので、ここまでの経緯と次にやることを圧縮してハンドオフ資料にしてください。", "should_trigger": true},
+  {"query": "他のメンバーにこの調査を渡します。踏んだ地雷も含めて引き継ぎできる形にしてください。", "should_trigger": true},
+  {"query": "この続きは来週やります。今の状態と次の一手をまとめた引き継ぎドキュメントをお願いします。", "should_trigger": true},
+  {"query": "別のセッションでテストの続きをやらせたいので、そこで呼ぶべきスキルも含めて申し送りを書いてください。", "should_trigger": true},
+
+  {"query": "今回の会話を証跡として記録に残してください。", "should_trigger": false},
+  {"query": "この技術選定の経緯を ADR として残しておきたいです。", "should_trigger": false},
+  {"query": "セッションリミットで止まっても解除後に自動で続きをやれるようにしたいです。", "should_trigger": false},
+  {"query": "トークン消費が多いので、読み込む情報を減らす方法を検討してください。", "should_trigger": false},
+  {"query": "この設計書の内容を新人にも分かるように噛み砕いて説明してください。", "should_trigger": false},
+  {"query": "プロジェクトの現在状況をダッシュボードにして見える化してください。", "should_trigger": false},
+  {"query": "議事録から決定事項とアクションアイテムを抜き出して WBS に反映してください。", "should_trigger": false},
+  {"query": "長時間かかるジョブを detach して起動し、後から結果を回収できるようにしてください。", "should_trigger": false}
+]
