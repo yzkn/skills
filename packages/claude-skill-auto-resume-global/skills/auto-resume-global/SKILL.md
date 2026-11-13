@@ -42,7 +42,7 @@ Claude Code の利用上限（5 時間・週）で対話セッションが止ま
                 └─ 解除時刻 + 3 分 を過ぎた
                       ├─ action=wake          ─▶ keep-awake.ps1 で、解除時刻 + 3 分 + 20 分 まで PC をスリープさせない (再開はしない)
                       └─ action=resume（既定）─▶ 新しいウィンドウで
-                                                 claude --resume <id> --fork-session --permission-mode <元のモード> "続けて…"
+                                                 claude --resume <id> --fork-session --remote-control <名前> --permission-mode <元のモード> "続けて…"
 ```
 
 | 状況 | どうなるか |
@@ -126,6 +126,8 @@ auto-resume.ps1（ログオン時など）
 | `permissionMode` | `fromSession` | （`resume`）再開時の権限モード。止まったセッションと同じにする。`manual` などに固定もできる |
 | `fallbackPermissionMode` | `manual` | （`resume`）セッションの記録にモードが無いとき |
 | `forkSession` | `true` | （`resume`）新しいセッション ID に分けて再開する |
+| `remoteControl` | `true` | （`resume`）再開した claude を `--remote-control` つきで起動する（起動後に `/remote-control` を実行したのと同じ）。再開は別のセッションになり元のリモート接続は切れるので、スマートフォンの Claude アプリなどから新しいセッションへ接続し直せるようにする |
+| `remoteControlName` | `""` | （`resume`）Remote Control のセッション名。空なら `<フォルダー名> (上限後の再開 MM/dd HH:mm)`（再起動からの再開は「再起動後の再開」） |
 | `marginMinutes` / `fallbackWaitMinutes` | `3` / `60` | 解除時刻から待つ分 / 解除時刻が記録に無いときに待つ分 |
 | `maxAgeHours` | `192` | これより前に止まったセッションは扱わない |
 | `excludeCwd` | `[]` | 扱わない作業ディレクトリ（ワイルドカード可） |

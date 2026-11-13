@@ -4,6 +4,8 @@
 .DESCRIPTION
   - --fork-session で新しいセッション ID に分けて再開する (止まったときのウィンドウが開いたままでも、同じ記録に二重に書き込まない)。
     分岐先の ID は auto-resume.ps1 が決めて -NewSessionId で渡す (--session-id)。
+  - --remote-control <名前> で Remote Control を有効にして起動する (config.json の remoteControl。既定 true)。
+    再開すると別のセッションになり、元のセッションのリモート接続は切れるため、スマートフォンから接続し直せるようにする。
   - 再開した claude が終わるまで、PC がスリープしないようにする (SetThreadExecutionState)
   - 動いている間は state/running/<分岐先の ID>.json を置き、claude が終われば消す。
     PC の再起動 (Windows Update など) で claude ごと終わると、この印が残る。auto-resume.ps1 は、次の起動 (ログオン時) に
@@ -56,6 +58,16 @@ if ($cfg.forkSession) {
     $claudeArgs += '--fork-session'
     if ($NewSessionId) { $claudeArgs += @('--session-id', $NewSessionId); $runningId = $NewSessionId }
     else { $runningId = $null }   # 分岐先の ID が分からないので、再起動からの再開は扱えない
+}
+# Remote Control を有効にして起動する (/remote-control と同じ)。再開すると別のセッションになり、
+# 元のセッションのリモート接続は切れるので、スマートフォンなどから新しいセッションへ接続し直せるようにする。
+# --remote-control の名前は省略できる引数なので、後ろの指示を名前と取り違えないよう、常に名前を渡す
+if (-not $cfg.PSObject.Properties['remoteControl'] -or $cfg.remoteControl) {
+    $rcName = if ($cfg.PSObject.Properties['remoteControlName'] -and $cfg.remoteControlName) { [string]$cfg.remoteControlName } else {
+        $kind = if ($Reason -eq 'reboot') { '再起動後の再開' } else { '上限後の再開' }
+        "$(Split-Path -Leaf $Cwd) ($kind $(Get-Date -Format 'MM/dd HH:mm'))"
+    }
+    $claudeArgs += @('--remote-control', $rcName)
 }
 $claudeArgs += @('--permission-mode', $Mode, $prompt)
 

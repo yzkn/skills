@@ -76,7 +76,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
      | 解除前 | 待機し、解除時刻 + 3 分に `ClaudeAutoResume-Wake` を登録する |
      | 上限のあとに入力あり | 対象外 |
    - `keep-awake.ps1 -Minutes 2` を 2 つ続けて起動し、先のものが止まって後のものだけが残ること（同時に 1 つ）
-   - 起動まで確かめるときは、インストール先のコピーで `config.json` の `claudePath` を引数を記録する代役に替える。作業ディレクトリと引数（`--resume <id> --fork-session --permission-mode <モード> <指示>`）を確かめる
+   - 起動まで確かめるときは、インストール先のコピーで `config.json` の `claudePath` を引数を記録する代役に替える。作業ディレクトリと引数（`--resume <id> --fork-session --session-id <分岐先> --remote-control <名前> --permission-mode <モード> <指示>`。`remoteControl: false` なら `--remote-control` は付かない）を確かめる
 4. (`-EnableSleepOnLimit` の場合) スリープの判断を確かめる。試験用のセッション記録 (最後の会話が上限の記録) を作り、
    `sleep-prompt.ps1 -DryRun -TranscriptPath <記録> -SimulateClick cancel` (または `sleep`、`-Seconds 3` で時間切れ) を実行して、`logs/auto-resume.log` に「キャンセル」「スリープする」と書かれること。
    上限の記録が無い記録では「スリープしない: 利用上限の記録が無い」、解除まで 15 分未満では「スリープしない」と書かれること
@@ -123,6 +123,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 その後、既定の動作を「PC を起こしてしばらく起こしておくだけ」（`action: wake`）に変えた。Claude Code 自体が上限の解除後に続きを進めると見込んだためである。しかし実際には、解除時刻にスリープから復帰しても作業は再開しなかった（2026-11-09、復帰のログは `ClaudeAutoResume-Wake`、ウィンドウは上限のメッセージのまま）。Claude Code は上限の解除後に止まったターンを自分では続けない。そこで既定を `action: resume`（新しいウィンドウで再開し、claude が動いている間はスリープさせない）に戻し、`wake` は別の仕組みが再開する場合のために残した。
 
 2026-11-13 には、解除時刻 (03:30) の復帰と再開 (03:33) はできたが、再開したセッションが 04:45 ごろ Windows Update (機能更新) の計画済みの再起動で、ツールの結果を返した直後に終わった。再起動後の記録は最後がツールの結果で上限の記録ではないため、巡回では拾えず、そのまま止まっていた。そこで、再開した claude が動いている印 (`state/running/`) を置き、再起動で残った印から、作業の途中で終わったセッションをもう一度再開するようにした。あわせて、Windows Terminal の場所を版を含まない実行エイリアスにした (版を含む場所は Terminal の更新で無くなる)。
+
+同じ日、再開は別のセッション (`--fork-session`) になるため、元のセッションに張っていた Remote Control の接続が切れ、スマートフォンから続きを見られなくなった。そこで、再開する claude を `--remote-control <名前>` つき (起動後に `/remote-control` を実行したのと同じ) で起動するようにした (`remoteControl`。既定 `true`)。名前は省略できる引数なので、後ろの指示を名前と取り違えないよう、常に名前を渡す。
 
 ## 8. 公開前チェック
 
