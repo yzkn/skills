@@ -1,0 +1,19 @@
+[
+  {"query": "Stripe と SendGrid の初期設定を、新しく入った人が自分で進められる対話式のセットアップスクリプトにしてください。", "should_trigger": true},
+  {"query": "CI のシークレット登録がいつも属人化しています。手順を順番に案内してくれるスクリプトを作れませんか。", "should_trigger": true},
+  {"query": "外部サービスの管理画面での作業が多くて毎回説明するのが大変です。画面を開いて何をコピーするか教えてくれるウィザードにしてください。", "should_trigger": true},
+  {"query": "本番切り替えの当日手順を、担当者が一段ずつ確認しながら進められる形にまとめてください。確認を挟みながら進みたいです。", "should_trigger": true},
+  {"query": "API キーの発行から .env への書き込みまで、人がやる作業を対話形式のスクリプトに落としてほしいです。", "should_trigger": true},
+  {"query": "新規メンバーの環境構築で、私にしかできない権限付与の手順を含めて、順を追って案内する仕組みを作ってください。", "should_trigger": true},
+  {"query": "一度きりのデータ移行作業ですが、途中で不可逆な操作が入るので、確認を取りながら進む手順スクリプトにしたいです。", "should_trigger": true},
+  {"query": "GitHub のシークレットと変数の設定を含むセットアップ手順を、対話式で走らせられるようにしてください。", "should_trigger": true},
+
+  {"query": "テストを実行して結果を教えてください。", "should_trigger": false},
+  {"query": "ビルドに 3 時間かかるので、セッションが切れても走り続ける形で流してください。", "should_trigger": false},
+  {"query": "デプロイの手順とロールバック方針を確認したいです。", "should_trigger": false},
+  {"query": "設定ファイル 40 件の環境名をまとめて置換してください。", "should_trigger": false},
+  {"query": "この PowerShell スクリプトのバグを調べて直してください。", "should_trigger": false},
+  {"query": "顧客に確認したい事項を質問票の形にまとめてください。", "should_trigger": false},
+  {"query": "CI パイプラインの YAML を書いてください。GitHub Actions で lint とテストを回したいです。", "should_trigger": false},
+  {"query": "この移行作業の計画を立てて、廃止までの段取りを整理してください。", "should_trigger": false}
+]

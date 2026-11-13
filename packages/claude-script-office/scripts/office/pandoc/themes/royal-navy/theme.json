@@ -1,0 +1,28 @@
+{
+  "_display_name": "royal-navy テーマ",
+  "_note": "ロイヤルネイビー（標準）。slides-maker の同名テーマと同一パレット（管理は別系統）",
+  "slide_size": {
+    "cx": 12192000,
+    "cy": 6858000
+  },
+  "fonts": {
+    "major_latin": "游明朝",
+    "major_ea": "游明朝",
+    "minor_latin": "游ゴシック",
+    "minor_ea": "游ゴシック"
+  },
+  "colors": {
+    "dk1": "1A1A1A",
+    "lt1": "FFFFFF",
+    "dk2": "1B3A6B",
+    "lt2": "D9E5F2",
+    "accent1": "3D6098",
+    "accent2": "7A9CC6",
+    "accent3": "2EC4C6",
+    "accent4": "27AE60",
+    "accent5": "C0392B",
+    "accent6": "B8CCE4",
+    "hlink": "0563C1",
+    "folHlink": "954F72"
+  }
+}

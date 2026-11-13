@@ -1,0 +1,48 @@
+{
+  "name": "sunrise",
+  "description": "エネルギッシュ（サンライズ）。royal-navy の配色バリエーション（フォント・レイアウトは共通）",
+  "colors": {
+    "navy_dark": "D14900",
+    "navy_mid": "F06E28",
+    "blue_light": "F79A63",
+    "blue_pale": "FBC9A8",
+    "blue_ultra_pale": "FEF0E5",
+    "white": "FFFFFF",
+    "text_dark": "231610",
+    "text_gray": "8C6F60",
+    "gray_light": "FDF7F0",
+    "accent_red": "C21807",
+    "accent_green": "22A45D",
+    "accent_cyan": "FDB827"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "blue_pale",
+      "text_gray"
+    ],
+    "pptxgenjs": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "accent_cyan",
+      "blue_pale",
+      "text_gray"
+    ]
+  }
+}

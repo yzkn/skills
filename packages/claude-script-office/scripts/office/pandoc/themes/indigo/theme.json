@@ -1,0 +1,28 @@
+{
+  "_display_name": "indigo テーマ",
+  "_note": "理知的（インディゴ）。slides-maker の同名テーマと同一パレット（管理は別系統）",
+  "slide_size": {
+    "cx": 12192000,
+    "cy": 6858000
+  },
+  "fonts": {
+    "major_latin": "游明朝",
+    "major_ea": "游明朝",
+    "minor_latin": "游ゴシック",
+    "minor_ea": "游ゴシック"
+  },
+  "colors": {
+    "dk1": "1C1B29",
+    "lt1": "FFFFFF",
+    "dk2": "383070",
+    "lt2": "E4E2F3",
+    "accent1": "5A55A0",
+    "accent2": "8E8AC6",
+    "accent3": "5AB0D8",
+    "accent4": "2E9E6B",
+    "accent5": "C0392B",
+    "accent6": "C7C5E4",
+    "hlink": "0563C1",
+    "folHlink": "954F72"
+  }
+}

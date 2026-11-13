@@ -1,0 +1,48 @@
+{
+  "name": "graphite",
+  "description": "厳粛（グラファイト）。royal-navy の配色バリエーション（フォント・レイアウトは共通）",
+  "colors": {
+    "navy_dark": "2E2E38",
+    "navy_mid": "51515E",
+    "blue_light": "84848F",
+    "blue_pale": "C4C4CC",
+    "blue_ultra_pale": "ECECEF",
+    "white": "FFFFFF",
+    "text_dark": "1A1A1A",
+    "text_gray": "6E6E76",
+    "gray_light": "F5F5F6",
+    "accent_red": "8C1D18",
+    "accent_green": "3A6B35",
+    "accent_cyan": "A67C00"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "blue_pale",
+      "text_gray"
+    ],
+    "pptxgenjs": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "accent_cyan",
+      "blue_pale",
+      "text_gray"
+    ]
+  }
+}

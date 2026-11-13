@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>グラフ作図サンプル — 文章執筆ガイドライン</title>
+<style>
+:root {
+  --bg:      #F2F4F8;
+  --surface: #FFFFFF;
+  --border:  #CBD3E3;
+  --text:    #1C2033;
+  --muted:   #5A6480;
+  --note-bg: #EEF3FA;
+  --sa:      #1A4FA0;
+  --sb:      #7AA3D4;
+  --sc:      #B84115;
+  --sd:      #E0916A;
+  --last:    #B84115;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 28px 16px 72px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "BIZ UDPGothic","Meiryo UI","Hiragino Kaku Gothic ProN","Yu Gothic UI",sans-serif;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.page-header {
+  max-width: 840px;
+  margin: 0 auto 28px;
+  padding-bottom: 18px;
+  border-bottom: 3px solid var(--sa);
+}
+
+.page-header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin: 0 0 4px;
+}
+
+.page-header p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.section {
+  max-width: 840px;
+  margin: 0 auto 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.section-head {
+  padding: 16px 24px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 180px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: #DDE8F8;
+  color: var(--sa);
+  white-space: nowrap;
+}
+
+.note {
+  padding: 11px 24px;
+  background: var(--note-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.note strong { color: var(--text); }
+
+.chart-wrap {
+  padding: 28px 16px 20px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+canvas { max-width: 100%; display: block; }
+
+details { border-top: 1px solid var(--border); }
+
+summary {
+  padding: 9px 24px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12.5px;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+
+summary::-webkit-details-marker { display: none; }
+
+summary::before {
+  content: "▶";
+  font-size: 8px;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+details[open] > summary::before { transform: rotate(90deg); }
+details[open] > summary { border-bottom: 1px solid var(--border); }
+
+.tbl-wrap {
+  overflow-x: auto;
+  padding: 0 24px 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  background: var(--note-bg);
+  font-weight: 700;
+  text-align: left;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  color: var(--text);
+}
+
+td {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+}
+
+tr:nth-child(even) td { background: #F8FAFD; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 0 24px 16px;
+  font-size: 12px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.legend-line {
+  width: 28px;
+  height: 2px;
+  display: inline-block;
+}
+
+@media (max-width: 600px) {
+  .section-head, .note, .tbl-wrap, .legend { padding-left: 16px; padding-right: 16px; }
+  .chart-wrap { padding: 20px 8px 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>グラフ作図サンプル — 文章執筆ガイドライン</h1>
+  <p>プレゼンテーション資料でのグラフ使用ルールを確認するための参照データです。棒グラフ・折れ線グラフの実例と使い分けのポイントを掲載しています。</p>
+</div>
+
+<!-- ── Chart 1: 都県人口 ── -->
+<div class="section">
+  <div class="section-head">
+    <h2 class="section-title">関東圏都県別人口</h2>
+    <span class="tag">棒グラフ</span>
+  </div>
+  <div class="note">
+    <strong>棒グラフのルール:</strong>
+    量の大小を比較するときに使う。縦軸は必ず 0 を基準にする（途中から始めると差が誇張される）。
+    棒の幅を揃え、プレゼンでは縦軸・目盛線を省略して棒の上にラベルを置くとシンプルになる。
+    円グラフよりも量の差が直感的に伝わる。
+  </div>
+  <div class="chart-wrap">
+    <canvas id="c-pop" width="560" height="310"></canvas>
+  </div>
+  <details>
+    <summary>データを表示</summary>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>都県</th><th>人口（千人）</th><th>構成比</th></tr></thead>
+        <tbody>
+          <tr><td>東京都</td><td>14,038</td><td>38.5%</td></tr>
+          <tr><td>神奈川県</td><td>9,232</td><td>25.3%</td></tr>
+          <tr><td>埼玉県</td><td>7,337</td><td>20.1%</td></tr>
+          <tr><td>千葉県</td><td>6,266</td><td>17.2%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<!-- ── Chart 2: 気温推移 ── -->
+<div class="section">
+  <div class="section-head">
+    <h2 class="section-title">東京・札幌 月別最高気温・最低気温（2023年4月〜2024年3月）</h2>
+    <span class="tag">折れ線グラフ</span>
+  </div>
+  <div class="note">
+    <strong>折れ線グラフのルール:</strong>
+    量の増減（時系列変化）を比較するときに使う。縦軸は 0 から始めなくてよい。
+    横軸は等間隔の時系列にする。各線にマーカーを設定し、凡例で区別する。
+    系列が複数ある場合は色と線種（実線・破線）を組み合わせると区別しやすい。
+  </div>
+  <div class="legend" id="temp-legend"></div>
+  <div class="chart-wrap">
+    <canvas id="c-temp" width="740" height="350"></canvas>
+  </div>
+  <details>
+    <summary>データを表示</summary>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>年月</th><th>東京 最高</th><th>東京 最低</th><th>札幌 最高</th><th>札幌 最低</th></tr></thead>
+        <tbody>
+          <tr><td>2023年4月</td><td>26.8</td><td>6.6</td><td>21.1</td><td>1.5</td></tr>
+          <tr><td>2023年5月</td><td>32.2</td><td>10.1</td><td>28.9</td><td>4.7</td></tr>
+          <tr><td>2023年6月</td><td>33.8</td><td>15.3</td><td>31.2</td><td>8.2</td></tr>
+          <tr><td>2023年7月</td><td>37.7</td><td>20.7</td><td>34.4</td><td>17.0</td></tr>
+          <tr><td>2023年8月</td><td>36.7</td><td>22.2</td><td>36.3</td><td>19.7</td></tr>
+          <tr><td>2023年9月</td><td>34.9</td><td>18.5</td><td>29.8</td><td>12.0</td></tr>
+          <tr><td>2023年10月</td><td>29.9</td><td>11.4</td><td>24.5</td><td>3.1</td></tr>
+          <tr><td>2023年11月</td><td>27.5</td><td>5.3</td><td>21.5</td><td>-5.2</td></tr>
+          <tr><td>2023年12月</td><td>21.1</td><td>0.1</td><td>11.4</td><td>-8.2</td></tr>
+          <tr><td>2024年1月</td><td>15.6</td><td>-1.1</td><td>5.4</td><td>-10.6</td></tr>
+          <tr><td>2024年2月</td><td>23.7</td><td>-0.1</td><td>13.9</td><td>-9.0</td></tr>
+          <tr><td>2024年3月</td><td>28.1</td><td>0.4</td><td>11.8</td><td>-8.3</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<!-- ── Chart 3: 売上高 ── -->
+<div class="section">
+  <div class="section-head">
+    <h2 class="section-title">年別売上高（2015〜2024年）</h2>
+    <span class="tag">棒グラフ</span>
+  </div>
+  <div class="note">
+    <strong>プレゼンでの活用ポイント:</strong>
+    成長を強調したい場合は最新値の棒の色を変えて注目させる手法が有効。
+    ただし縦軸は必ず 0 から始める。途中省略（〜〜）は不誠実に見える場合がある。
+    単位は軸ラベルに明記する。
+  </div>
+  <div class="chart-wrap">
+    <canvas id="c-sales" width="720" height="320"></canvas>
+  </div>
+  <details>
+    <summary>データを表示</summary>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>年</th><th>売上高</th><th>前年比</th></tr></thead>
+        <tbody>
+          <tr><td>2015年</td><td>12</td><td>—</td></tr>
+          <tr><td>2016年</td><td>12</td><td>+0%</td></tr>
+          <tr><td>2017年</td><td>19</td><td>+58%</td></tr>
+          <tr><td>2018年</td><td>22</td><td>+16%</td></tr>
+          <tr><td>2019年</td><td>31</td><td>+41%</td></tr>
+          <tr><td>2020年</td><td>35</td><td>+13%</td></tr>
+          <tr><td>2021年</td><td>34</td><td>−3%</td></tr>
+          <tr><td>2022年</td><td>53</td><td>+56%</td></tr>
+          <tr><td>2023年</td><td>80</td><td>+51%</td></tr>
+          <tr><td>2024年</td><td>137</td><td>+71%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var C = {
+    sa: '#1A4FA0', sb: '#7AA3D4',
+    sc: '#B84115', sd: '#E0916A',
+    grid: '#E4E9F2', text: '#1C2033', muted: '#5A6480',
+    border: '#CBD3E3', last: '#B84115'
+  };
+
+  var FONT = '"BIZ UDPGothic","Meiryo UI","Yu Gothic UI",sans-serif';
+
+  function hi(id) {
+    var el = document.getElementById(id);
+    var dpr = window.devicePixelRatio || 1;
+    var w = el.width, h = el.height;
+    el.width  = w * dpr;
+    el.height = h * dpr;
+    el.style.width  = w + 'px';
+    el.style.height = h + 'px';
+    var ctx = el.getContext('2d');
+    ctx.scale(dpr, dpr);
+    return { ctx: ctx, w: w, h: h };
+  }
+
+  function gridLines(ctx, L, T, R, B, yMin, yMax, step) {
+    ctx.save();
+    ctx.strokeStyle = C.grid;
+    ctx.lineWidth = 1;
+    for (var y = yMin; y <= yMax + 0.001; y += step) {
+      var py = B - (y - yMin) / (yMax - yMin) * (B - T);
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(R, py); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function yLabels(ctx, L, T, B, yMin, yMax, step, fmt) {
+    ctx.save();
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px ' + FONT;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var y = yMin; y <= yMax + 0.001; y += step) {
+      var py = B - (y - yMin) / (yMax - yMin) * (B - T);
+      ctx.fillText(fmt(y), L - 6, py);
+    }
+    ctx.restore();
+  }
+
+  function axes(ctx, L, T, R, B) {
+    ctx.save();
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, B); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(L, B); ctx.lineTo(R, B); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ── Chart 1: Population ── */
+  (function () {
+    var r = hi('c-pop');
+    var ctx = r.ctx, w = r.w, h = r.h;
+    var L = 78, R = w - 20, T = 28, B = h - 50;
+    var data = [
+      { label: '東京都',   val: 14038 },
+      { label: '神奈川県', val: 9232  },
+      { label: '埼玉県',   val: 7337  },
+      { label: '千葉県',   val: 6266  }
+    ];
+    var yMin = 0, yMax = 16000, yStep = 4000;
+
+    gridLines(ctx, L, T, R, B, yMin, yMax, yStep);
+    axes(ctx, L, T, R, B);
+    yLabels(ctx, L, T, B, yMin, yMax, yStep, function (v) {
+      if (v === 0) return '0';
+      return (v / 1000).toFixed(0) + ',000';
+    });
+
+    /* y-axis label */
+    ctx.save();
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.translate(14, (T + B) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('人口（千人）', 0, 0);
+    ctx.restore();
+
+    var n = data.length;
+    var slotW = (R - L) / n;
+    var barW  = slotW * 0.52;
+
+    data.forEach(function (d, i) {
+      var x  = L + i * slotW + (slotW - barW) / 2;
+      var bh = (d.val - yMin) / (yMax - yMin) * (B - T);
+      var y  = B - bh;
+
+      var g = ctx.createLinearGradient(0, y, 0, B);
+      g.addColorStop(0, '#2B65C4');
+      g.addColorStop(1, '#16408A');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, barW, bh);
+
+      ctx.fillStyle = C.text;
+      ctx.font = 'bold 12px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(d.val.toLocaleString(), x + barW / 2, y - 4);
+
+      ctx.fillStyle = C.muted;
+      ctx.font = '12px ' + FONT;
+      ctx.textBaseline = 'top';
+      ctx.fillText(d.label, x + barW / 2, B + 8);
+    });
+  }());
+
+  /* ── Chart 2: Temperature ── */
+  (function () {
+    var r = hi('c-temp');
+    var ctx = r.ctx, w = r.w, h = r.h;
+    var L = 52, R = w - 20, T = 28, B = h - 54;
+
+    var months = ['4月','5月','6月','7月','8月','9月','10月','11月','12月','1月','2月','3月'];
+    var series = [
+      { label: '東京 最高', color: C.sa, dash: [],    vals: [26.8,32.2,33.8,37.7,36.7,34.9,29.9,27.5,21.1,15.6,23.7,28.1] },
+      { label: '東京 最低', color: C.sb, dash: [5,3], vals: [6.6,10.1,15.3,20.7,22.2,18.5,11.4,5.3,0.1,-1.1,-0.1,0.4] },
+      { label: '札幌 最高', color: C.sc, dash: [],    vals: [21.1,28.9,31.2,34.4,36.3,29.8,24.5,21.5,11.4,5.4,13.9,11.8] },
+      { label: '札幌 最低', color: C.sd, dash: [5,3], vals: [1.5,4.7,8.2,17.0,19.7,12.0,3.1,-5.2,-8.2,-10.6,-9.0,-8.3] }
+    ];
+    var yMin = -15, yMax = 40, yStep = 10;
+    var n = months.length;
+
+    function tx(i) { return L + i * (R - L) / (n - 1); }
+    function ty(v) { return B - (v - yMin) / (yMax - yMin) * (B - T); }
+
+    gridLines(ctx, L, T, R, B, yMin, yMax, yStep);
+
+    /* zero line */
+    ctx.save();
+    ctx.strokeStyle = '#9BAAB8';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(L, ty(0)); ctx.lineTo(R, ty(0)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    axes(ctx, L, T, R, B);
+    yLabels(ctx, L, T, B, yMin, yMax, yStep, function (v) { return v + '°'; });
+
+    /* y-axis label */
+    ctx.save();
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.translate(13, (T + B) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('気温（℃）', 0, 0);
+    ctx.restore();
+
+    series.forEach(function (s) {
+      ctx.save();
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash(s.dash);
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      s.vals.forEach(function (v, i) {
+        i === 0 ? ctx.moveTo(tx(i), ty(v)) : ctx.lineTo(tx(i), ty(v));
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      s.vals.forEach(function (v, i) {
+        ctx.beginPath();
+        ctx.arc(tx(i), ty(v), 3, 0, Math.PI * 2);
+        ctx.fillStyle = s.color;
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+      ctx.restore();
+    });
+
+    /* x labels */
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    months.forEach(function (m, i) { ctx.fillText(m, tx(i), B + 8); });
+
+    ctx.font = '10px ' + FONT;
+    ctx.fillStyle = '#9BAAB8';
+    ctx.fillText('← 2023年 ─────────────────', tx(3.5), B + 28);
+    ctx.fillText('── 2024年 →', tx(9.5), B + 28);
+
+    /* legend */
+    var legEl = document.getElementById('temp-legend');
+    series.forEach(function (s) {
+      var item = document.createElement('div');
+      item.className = 'legend-item';
+
+      var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('width','28'); svg.setAttribute('height','12');
+      var line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1','0'); line.setAttribute('y1','6');
+      line.setAttribute('x2','28'); line.setAttribute('y2','6');
+      line.setAttribute('stroke', s.color);
+      line.setAttribute('stroke-width','2');
+      if (s.dash.length) line.setAttribute('stroke-dasharray', s.dash.join(' '));
+      svg.appendChild(line);
+      var circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      circle.setAttribute('cx','14'); circle.setAttribute('cy','6'); circle.setAttribute('r','3');
+      circle.setAttribute('fill', s.color);
+      svg.appendChild(circle);
+
+      var span = document.createElement('span');
+      span.textContent = s.label;
+      item.appendChild(svg);
+      item.appendChild(span);
+      legEl.appendChild(item);
+    });
+  }());
+
+  /* ── Chart 3: Sales ── */
+  (function () {
+    var r = hi('c-sales');
+    var ctx = r.ctx, w = r.w, h = r.h;
+    var L = 52, R = w - 20, T = 32, B = h - 50;
+    var data = [
+      { yr: '2015', val: 12  },
+      { yr: '2016', val: 12  },
+      { yr: '2017', val: 19  },
+      { yr: '2018', val: 22  },
+      { yr: '2019', val: 31  },
+      { yr: '2020', val: 35  },
+      { yr: '2021', val: 34  },
+      { yr: '2022', val: 53  },
+      { yr: '2023', val: 80  },
+      { yr: '2024', val: 137, hi: true }
+    ];
+    var yMin = 0, yMax = 160, yStep = 40;
+
+    gridLines(ctx, L, T, R, B, yMin, yMax, yStep);
+    axes(ctx, L, T, R, B);
+    yLabels(ctx, L, T, B, yMin, yMax, yStep, function (v) { return String(v); });
+
+    /* y-axis label */
+    ctx.save();
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.translate(13, (T + B) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('売上高', 0, 0);
+    ctx.restore();
+
+    var n = data.length;
+    var slotW = (R - L) / n;
+    var barW  = slotW * 0.54;
+
+    data.forEach(function (d, i) {
+      var x  = L + i * slotW + (slotW - barW) / 2;
+      var bh = (d.val / yMax) * (B - T);
+      var y  = B - bh;
+
+      var g = ctx.createLinearGradient(0, y, 0, B);
+      if (d.hi) {
+        g.addColorStop(0, '#D05218');
+        g.addColorStop(1, '#963A0D');
+      } else {
+        g.addColorStop(0, '#2B65C4');
+        g.addColorStop(1, '#16408A');
+      }
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, barW, bh);
+
+      /* value labels on selected bars */
+      if (d.hi || i === 0 || i === 4 || i === 7) {
+        ctx.fillStyle = d.hi ? C.last : C.text;
+        ctx.font = (d.hi ? 'bold ' : '') + '11px ' + FONT;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(d.val, x + barW / 2, y - 4);
+      }
+
+      if (d.hi) {
+        ctx.fillStyle = C.last;
+        ctx.font = 'bold 10px ' + FONT;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('↑71%', x + barW / 2, y - 17);
+      }
+
+      ctx.fillStyle = d.hi ? C.text : C.muted;
+      ctx.font = (d.hi ? 'bold ' : '') + '11px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(d.yr, x + barW / 2, B + 8);
+    });
+  }());
+
+}());
+</script>
+
+</body>
+</html>

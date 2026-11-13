@@ -1,0 +1,16 @@
+[
+  {"query": "この Node.js の API をコンテナで動かせるようにしてください。DB は PostgreSQL です。", "should_trigger": true},
+  {"query": "src/ にある Python アプリの Dockerfile を書いてください。", "should_trigger": true},
+  {"query": "イメージが 1.2GB もあって重いです。Dockerfile を見直して小さくしてください。", "should_trigger": true},
+  {"query": "compose.yaml で web が DB より先に起動して接続エラーになります。起動順を直してください。", "should_trigger": true},
+  {"query": "開発環境に Redis を足したいです。ローカルに入れずに済む方法でお願いします。", "should_trigger": true},
+  {"query": "この Containerfile が root で動いていないか、ベストプラクティスに沿っているかレビューしてください。", "should_trigger": true},
+  {"query": ".dockerignore を作ってください。秘密情報がイメージに入らないようにしたいです。", "should_trigger": true},
+  {"query": "podman で HEALTHCHECK が効いていないみたいです。原因を調べて直してください。", "should_trigger": true},
+  {"query": "Kubernetes の Deployment と Service のマニフェストを書いてください。", "should_trigger": false},
+  {"query": "Terraform で Azure Container Apps を構築するコードをレビューしてください。", "should_trigger": false},
+  {"query": "GitHub Actions でテストを回すワークフローを作ってください。", "should_trigger": false},
+  {"query": "package.json の依存に既知の脆弱性がないか調べてください。", "should_trigger": false},
+  {"query": "このシステムの構成図を draw.io で描いてください。コンテナが 3 つあります。", "should_trigger": false},
+  {"query": "リリースのバージョン番号をどう上げるべきか教えてください。", "should_trigger": false}
+]

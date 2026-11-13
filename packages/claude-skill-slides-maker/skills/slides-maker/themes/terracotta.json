@@ -1,0 +1,48 @@
+{
+  "name": "terracotta",
+  "description": "暖色系（テラコッタ）。royal-navy の配色バリエーション（フォント・レイアウトは共通）",
+  "colors": {
+    "navy_dark": "9A3B26",
+    "navy_mid": "C0603F",
+    "blue_light": "D98E6A",
+    "blue_pale": "EFC4AE",
+    "blue_ultra_pale": "F9E9DF",
+    "white": "FFFFFF",
+    "text_dark": "2B1D18",
+    "text_gray": "8A7268",
+    "gray_light": "FAF5F1",
+    "accent_red": "B71C1C",
+    "accent_green": "2E7D32",
+    "accent_cyan": "D9A441"
+  },
+  "fonts": {
+    "python-pptx": {
+      "heading": "游明朝",
+      "body": "游ゴシック",
+      "numbers": "Calibri"
+    },
+    "pptxgenjs": {
+      "heading": "游ゴシック",
+      "body": "游ゴシック",
+      "numbers": "Calibri",
+      "fallback": "Noto Sans JP"
+    }
+  },
+  "chart_palette": {
+    "python-pptx": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "blue_pale",
+      "text_gray"
+    ],
+    "pptxgenjs": [
+      "navy_dark",
+      "navy_mid",
+      "blue_light",
+      "accent_cyan",
+      "blue_pale",
+      "text_gray"
+    ]
+  }
+}

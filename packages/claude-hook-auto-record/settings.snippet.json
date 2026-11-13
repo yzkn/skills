@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/auto-record.ps1 2>doc/log/error/auto-record-stderr.log"
+          }
+        ]
+      }
+    ]
+  }
+}

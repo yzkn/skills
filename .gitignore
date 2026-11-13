@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+Thumbs.db
+.DS_Store
+.export-public

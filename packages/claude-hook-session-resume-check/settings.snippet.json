@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/session-resume-check.ps1 2>doc/log/error/session-resume-check-stderr.log"
+          }
+        ]
+      }
+    ]
+  }
+}
