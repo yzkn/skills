@@ -99,6 +99,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 - `action: resume` で、解除時刻 + 3 分から最初の巡回（最大 10 分）までの間に元のウィンドウで入力しないと、自動で再開したウィンドウも開く
 - PC の電源が切れている間は再開しない（次のログオン時に再開する）
 - Windows Update の再起動は、スリープの抑止に関係なく行われる。再開したセッションがそれで中断したら、次のログオン時にもう一度再開する（この仕組みが再開したセッションだけ。`--session-id` と `--fork-session` を一緒に使える版の Claude Code が要る）
+- 上限の記録のあとに Claude Code が差し込む `user` の記録（バックグラウンドのサブエージェントの通知 `<task-notification>`、`isMeta` の記録）は、利用者の入力とみなさない。見分けには記録の `origin.kind` / `promptSource` / `isMeta` を使う（内部形式。版が変わったら `Test-SyntheticUser` を実物の記録に合わせて直す）
 - `-EnableWakeTimers` はバッテリ駆動時の設定を変えない (ノート PC がバッテリで勝手に起きないように)
 - 上限で止まったらスリープする機能は、`StopFailure` フックの入力の `error` が `rate_limit` のときに動く。一時的な 429 でも `rate_limit` になるため、セッション記録の上限の記録 (`usage_limit_reached`) を最大 20 秒待って確かめる
 
@@ -125,6 +126,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 2026-11-13 には、解除時刻 (03:30) の復帰と再開 (03:33) はできたが、再開したセッションが 04:45 ごろ Windows Update (機能更新) の計画済みの再起動で、ツールの結果を返した直後に終わった。再起動後の記録は最後がツールの結果で上限の記録ではないため、巡回では拾えず、そのまま止まっていた。そこで、再開した claude が動いている印 (`state/running/`) を置き、再起動で残った印から、作業の途中で終わったセッションをもう一度再開するようにした。あわせて、Windows Terminal の場所を版を含まない実行エイリアスにした (版を含む場所は Terminal の更新で無くなる)。
 
 同じ日、再開は別のセッション (`--fork-session`) になるため、元のセッションに張っていた Remote Control の接続が切れ、スマートフォンから続きを見られなくなった。そこで、再開する claude を `--remote-control <名前>` つき (起動後に `/remote-control` を実行したのと同じ) で起動するようにした (`remoteControl`。既定 `true`)。名前は省略できる引数なので、後ろの指示を名前と取り違えないよう、常に名前を渡す。
+
+2026-11-13 には、バックグラウンドのサブエージェント 4 本を動かしている間に上限で止まったセッションが、スリープも解除後の再開もされなかった。上限の記録のあとに、サブエージェントが失敗したという通知が `user` の記録（`origin.kind = task-notification`）として付き、「最後の会話の記録」が上限の記録でなくなっていた。巡回は「上限のあとに利用者が入力した」とみなし、スリープの確認は「利用上限の記録が無い」とみなしていた。そこで、利用者の入力ではない `user` の記録を飛ばして最後の会話の記録を探すようにした（`auto-resume.ps1` の `Test-SyntheticUser`、`sleep-prompt.ps1` の `$isSynthetic`）。利用者が実際に入力した記録（`origin.kind = human`）は飛ばさない。あわせて、再開時の指示に「サブエージェントも止まっていれば、起動し直さず続きから」を足した。止まった時点の実物の記録の写しで、`-DryRun` の判断が「再開」になることを確かめた。
 
 ## 8. 公開前チェック
 
