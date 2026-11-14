@@ -39,15 +39,17 @@ Claude Code の利用上限（5 時間・週）で止まった対話セッショ
 mkdir -Force ~/.claude/skills
 Copy-Item -Recurse packages/claude-skill-auto-resume-global/skills/auto-resume-global ~/.claude/skills/
 
-# 設定する (スクリプトを ~/.claude/auto-resume にコピーし、タスクを登録する)
+# 設定する (スクリプトを ~/.claude/auto-resume-global にコピーし、タスクを登録する)
 pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTimers
 ```
+
+前の版（フォルダ `~/.claude/auto-resume`、タスク `ClaudeAutoResume` / `ClaudeAutoResume-Wake`）が入っていれば、`install.ps1` が移行する: 設定・状態・ログを新しいインストール先に写し、前のフォルダのスクリプトを起動するタスクを消し、`settings.json` のフックを付け替え、前のフォルダに `disabled` を置く（前のフォルダは消さない。確かめたら消してよい）。
 
 **スキルは必ずディレクトリ形式（`.claude/skills/auto-resume-global/SKILL.md`）で置く。** フラットな `.md` として置くとスキル登録機構に載らず、自動適用も `/auto-resume-global` での呼び出しもできない。
 
 `-EnableWakeTimers` は、電源接続時の「スリープ解除タイマーの許可」を「有効」にする（元の値は記録し、`uninstall.ps1 -RestoreWakeTimers` で戻す）。付けないと、スリープ中に解除時刻が来ても PC が寝たままで、次に起こしたときに再開する。
 
-上限で止まったら PC をスリープさせたいときは、`-EnableSleepOnLimit` を付ける (`-EnableWakeTimers` と一緒に)。`~/.claude/settings.json` の `StopFailure` (matcher: `rate_limit`) にフックを足す (元のファイルは `~/.claude/auto-resume/state/settings.json.bak` に控える)。上限の記録を確かめ、解除時刻の復帰タスクを登録してから、確認の画面を出す。「キャンセル」でスリープしない。外すには `install.ps1 -DisableSleepOnLimit` か `uninstall.ps1`。
+上限で止まったら PC をスリープさせたいときは、`-EnableSleepOnLimit` を付ける (`-EnableWakeTimers` と一緒に)。`~/.claude/settings.json` の `StopFailure` (matcher: `rate_limit`) にフックを足す (元のファイルは `~/.claude/auto-resume-global/state/settings.json.bak` に控える)。上限の記録を確かめ、解除時刻の復帰タスクを登録してから、確認の画面を出す。「キャンセル」でスリープしない。外すには `install.ps1 -DisableSleepOnLimit` か `uninstall.ps1`。
 
 ```powershell
 pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTimers -EnableSleepOnLimit
@@ -62,9 +64,9 @@ Windows の「しばらく操作しなかった場合に、もう一度 Windows 
 `/auto-resume-global` で明示的に呼び出す。frontmatter の `description` に一致する依頼で自動適用もされる。
 
 ```powershell
-pwsh -File ~/.claude/auto-resume/auto-resume.ps1 -DryRun     # 待機中・再開予定のセッションを見る (何もしない)
-New-Item ~/.claude/auto-resume/disabled                       # 一時停止 (Remove-Item で再開)
-pwsh -File ~/.claude/auto-resume/uninstall.ps1 -RestoreWakeTimers   # やめる
+pwsh -File ~/.claude/auto-resume-global/auto-resume.ps1 -DryRun     # 待機中・再開予定のセッションを見る (何もしない)
+New-Item ~/.claude/auto-resume-global/disabled                       # 一時停止 (Remove-Item で再開)
+pwsh -File ~/.claude/auto-resume-global/uninstall.ps1 -RestoreWakeTimers   # やめる
 ```
 
 ## 収録ファイル

@@ -38,7 +38,7 @@ $cfg = Get-Content (Join-Path $PSScriptRoot 'config.json') -Raw -Encoding UTF8 |
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-namespace ClaudeAutoResume {
+namespace ClaudeAutoResumeGlobal {
     public static class Power {
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct REASON_CONTEXT {
@@ -70,8 +70,8 @@ namespace ClaudeAutoResume {
     }
 }
 '@
-$powerRequest = [ClaudeAutoResume.Power]::Request("Claude Code の自動再開: 再開したセッション ($SessionId) が動いている")
-[ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000001') | Out-Null   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+$powerRequest = [ClaudeAutoResumeGlobal.Power]::Request("Claude Code の自動再開: 再開したセッション ($SessionId) が動いている")
+[ClaudeAutoResumeGlobal.Power]::SetThreadExecutionState([uint32]'0x80000001') | Out-Null   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
 
 Set-Location -LiteralPath $Cwd
 $Host.UI.RawUI.WindowTitle = "Claude 再開 $SessionId"
@@ -126,6 +126,6 @@ try {
 finally {
     # 正常に終わった (利用者が閉じた・終了した) ときだけ消える。再起動で強制終了されたときは残る
     if ($marker -and (Test-Path $marker)) { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue }
-    [ClaudeAutoResume.Power]::Release($powerRequest)
-    [ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null   # スリープ抑止を解除
+    [ClaudeAutoResumeGlobal.Power]::Release($powerRequest)
+    [ClaudeAutoResumeGlobal.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null   # スリープ抑止を解除
 }

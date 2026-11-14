@@ -5,7 +5,7 @@
 .DESCRIPTION
   1. セッション記録の最後の会話が利用上限の記録 (Test-LimitRecord。auto-resume.ps1 と同じ判定) になるのを待つ (一時的な 429 ならスリープしない)
   2. 解除まで sleepMinMinutes (既定 15 分) 未満ならスリープしない
-  3. auto-resume.ps1 を実行して、解除時刻 + 余裕 に復帰するタスク ClaudeAutoResume-Wake を登録する
+  3. auto-resume.ps1 を実行して、解除時刻 + 余裕 に復帰するタスク ClaudeAutoResumeGlobal-Wake を登録する
   4. 確認の画面を出す。「今すぐスリープ」か、応答が無いまま時間が過ぎたらスリープする。「キャンセル」で何もしない
      (復帰タスクが無い・スリープ解除タイマーが無効・バッテリ駆動中・gh / glab の認証が切れているなら、画面にその旨を出す)
      解除まで sleepMaxHours (既定 12 時間) より長ければ、時間が過ぎてもスリープしない (「今すぐスリープ」ならスリープする)
@@ -83,7 +83,7 @@ if ($CheckAuthOnly) {
 }
 if (-not $TranscriptPath) { throw '-TranscriptPath を指定してください' }
 
-$mutex = New-Object Threading.Mutex($false, 'Local\ClaudeSleepOnLimit')
+$mutex = New-Object Threading.Mutex($false, 'Local\ClaudeAutoResumeGlobal-Sleep')
 if (-not $mutex.WaitOne(0)) { exit 0 }   # 別のセッションの確認がもう出ている
 try {
     $cfg = Get-Content (Join-Path $Root 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -187,8 +187,8 @@ try {
         & $cfg.shellPath -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'auto-resume.ps1') | Out-Null
     }
     $warnings = @()
-    $wakeTask = Get-ScheduledTask -TaskName 'ClaudeAutoResume-Wake' -ErrorAction SilentlyContinue
-    $wakeAt = if ($wakeTask) { (Get-ScheduledTaskInfo -TaskName 'ClaudeAutoResume-Wake').NextRunTime } else { $null }
+    $wakeTask = Get-ScheduledTask -TaskName 'ClaudeAutoResumeGlobal-Wake' -ErrorAction SilentlyContinue
+    $wakeAt = if ($wakeTask) { (Get-ScheduledTaskInfo -TaskName 'ClaudeAutoResumeGlobal-Wake').NextRunTime } else { $null }
     if (-not $wakeAt) { $warnings += '解除時刻に復帰するタスクがありません。自動では復帰しません。' }
     $rtc = @(powercfg /query SCHEME_CURRENT SUB_SLEEP RTCWAKE | Select-String -Pattern '0x[0-9a-fA-F]{8}\s*$' | ForEach-Object { [Convert]::ToInt32($_.Matches[0].Value.Trim(), 16) })
     if ($rtc.Count -ge 2 -and $rtc[-2] -ne 1) { $warnings += 'スリープ解除タイマー (電源接続時) が「有効」ではありません (install.ps1 -EnableWakeTimers)。' }

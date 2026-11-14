@@ -4,7 +4,7 @@
 .DESCRIPTION
   ~/.claude/projects/*/*.jsonl (全プロジェクトのセッション記録) を調べ、最後の会話の記録が
   利用上限の記録 (Test-LimitRecord。apiError = usage_limit_reached など) になっているセッションを「上限で停止中」とみなす。
-  - まだ解除前なら、解除時刻 + 余裕 にスリープから復帰して実行するタスク (ClaudeAutoResume-Wake) を登録する
+  - まだ解除前なら、解除時刻 + 余裕 にスリープから復帰して実行するタスク (ClaudeAutoResumeGlobal-Wake) を登録する
   - 解除時刻 + 余裕 を過ぎていれば、config.json の action に従う
       resume (既定): 新しいターミナルのウィンドウで claude --resume <id> --fork-session を起動する
                      (再開した claude が動いている間は、PC をスリープさせない。resume-session.ps1)
@@ -19,7 +19,7 @@
 .PARAMETER DryRun
   何も起動・登録せず、見つけたセッションと判断だけを表示する。待って調べ直すこともしない。
 .PARAMETER NoTask
-  タスク (ClaudeAutoResume-Wake) の登録・削除をしない (試験用)。
+  タスク (ClaudeAutoResumeGlobal-Wake) の登録・削除をしない (試験用)。
 .PARAMETER ProjectsDir
   セッション記録の置き場所 (試験用に差し替えられる)。既定は ~/.claude/projects
 .PARAMETER StateDir
@@ -54,7 +54,7 @@ if (Test-Path (Join-Path $Root 'disabled')) { if ($DryRun) { Write-Host 'disable
 # 同時に 2 つ動かない。先の実行が終わるのを 120 秒まで待つ
 # (スリープ復帰のイベントの起動と復帰タスクの起動は、ほぼ同時になる。すぐにやめると、先の実行が取りこぼしたときに後が無い)
 # 試験で別の -StateDir を使うときは、別の名前にする (本物の巡回を待たせない)
-$mutexName = 'Local\ClaudeAutoResume'
+$mutexName = 'Local\ClaudeAutoResumeGlobal'
 $stateFull = [IO.Path]::GetFullPath($StateDir).TrimEnd('\')
 if ($stateFull -ne [IO.Path]::GetFullPath((Join-Path $Root 'state')).TrimEnd('\')) {
     $sha = [Security.Cryptography.SHA1]::Create()
@@ -71,7 +71,7 @@ if (-not $owned) { Write-Log 'skip: 別の実行が 120 秒たっても終わら
 $powerType = @'
 using System;
 using System.Runtime.InteropServices;
-namespace ClaudeAutoResume {
+namespace ClaudeAutoResumeGlobal {
     public static class Power {
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct REASON_CONTEXT {
@@ -109,8 +109,8 @@ try {
     $cfg = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $DryRun) {
         Add-Type -TypeDefinition $powerType
-        $powerHandle = [ClaudeAutoResume.Power]::Request('Claude Code の自動再開 (auto-resume.ps1) が、上限で止まったセッションを調べて再開している')
-        [ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000001') | Out-Null   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+        $powerHandle = [ClaudeAutoResumeGlobal.Power]::Request('Claude Code の自動再開 (auto-resume.ps1) が、上限で止まったセッションを調べて再開している')
+        [ClaudeAutoResumeGlobal.Power]::SetThreadExecutionState([uint32]'0x80000001') | Out-Null   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
         if ($powerHandle -eq [IntPtr]::Zero) { Write-Log '警告: スリープさせない要求 (PowerCreateRequest) を作れない' }
     }
     $debugLog = [bool]($cfg.PSObject.Properties['debugLog'] -and $cfg.debugLog)
@@ -460,7 +460,7 @@ try {
 
         # 次の解除時刻にスリープから復帰して起動する 1 回きりのタスク
         # (VBScript は Windows から外されていくので、conhost.exe --headless でウィンドウを出さずに起動する)
-        $wakeName = 'ClaudeAutoResume-Wake'
+        $wakeName = 'ClaudeAutoResumeGlobal-Wake'
         if ($NoTask) {
             if ($nextWake) { Write-Log ("NoTask: 次の解除時刻 {0} の復帰タスクは登録しない" -f $nextWake.ToString('MM/dd HH:mm:ss')) }
         } elseif ($nextWake) {
@@ -491,7 +491,7 @@ catch {
     throw
 }
 finally {
-    if ($powerHandle -ne [IntPtr]::Zero) { [ClaudeAutoResume.Power]::Release($powerHandle) }
-    if ('ClaudeAutoResume.Power' -as [type]) { [ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null }   # スリープ抑止を解除
+    if ($powerHandle -ne [IntPtr]::Zero) { [ClaudeAutoResumeGlobal.Power]::Release($powerHandle) }
+    if ('ClaudeAutoResumeGlobal.Power' -as [type]) { [ClaudeAutoResumeGlobal.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null }   # スリープ抑止を解除
     $mutex.ReleaseMutex()
 }
