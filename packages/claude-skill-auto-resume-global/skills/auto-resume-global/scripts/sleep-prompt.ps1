@@ -44,15 +44,31 @@ try {
     $minMinutes = if ($cfg.PSObject.Properties['sleepMinMinutes']) { [double]$cfg.sleepMinMinutes } else { 15 }
 
     # 1. 利用上限の記録 (最後の会話の記録。auto-resume.ps1 と同じ判定)
+    # 利用者の入力ではない user の記録か (サブエージェントの通知 <task-notification>、isMeta の記録など)。
+    # サブエージェントを動かしている間に上限に当たると、上限の記録の「あと」にこれらが付く。auto-resume.ps1 の Test-SyntheticUser と同じ判定
+    $isSynthetic = {
+        param($r)
+        if ($r.type -ne 'user') { return $false }
+        if ($r.PSObject.Properties['isMeta'] -and $r.isMeta) { return $true }
+        if ($r.PSObject.Properties['origin'] -and $r.origin -and $r.origin.PSObject.Properties['kind']) { return ($r.origin.kind -ne 'human') }
+        if ($r.PSObject.Properties['promptSource'] -and $r.promptSource -eq 'system') { return $true }
+        $content = if ($r.message) { $r.message.content } else { $null }
+        return ($content -is [string] -and $content -match '^\s*<(task-notification|system-reminder)>')
+    }
     $getLimit = {
         if (-not (Test-Path -LiteralPath $TranscriptPath)) { return $null }
-        $tail = Get-Content -LiteralPath $TranscriptPath -Tail 80 -Encoding UTF8
-        for ($i = $tail.Count - 1; $i -ge 0; $i--) {
-            if (-not $tail[$i].StartsWith('{"parentUuid"')) { continue }
-            try { $r = $tail[$i] | ConvertFrom-Json } catch { continue }
-            if (($r.type -ne 'user' -and $r.type -ne 'assistant') -or $r.isSidechain) { continue }
-            if ($r.type -eq 'assistant' -and $r.PSObject.Properties['apiError'] -and $r.apiError -eq 'usage_limit_reached') { return $r }
-            return $null
+        # まず末尾 80 行。上限の記録のあとの通知だけで埋まっていたら、400 行まで広げる (auto-resume.ps1 の Get-LastTurn と同じ)
+        foreach ($count in 80, 400) {
+            $tail = @(Get-Content -LiteralPath $TranscriptPath -Tail $count -Encoding UTF8)
+            for ($i = $tail.Count - 1; $i -ge 0; $i--) {
+                if (-not $tail[$i].StartsWith('{"parentUuid"')) { continue }
+                try { $r = $tail[$i] | ConvertFrom-Json } catch { continue }
+                if (($r.type -ne 'user' -and $r.type -ne 'assistant') -or $r.isSidechain) { continue }
+                if (& $isSynthetic $r) { continue }
+                if ($r.type -eq 'assistant' -and $r.PSObject.Properties['apiError'] -and $r.apiError -eq 'usage_limit_reached') { return $r }
+                return $null
+            }
+            if ($tail.Count -lt $count) { break }
         }
         return $null
     }

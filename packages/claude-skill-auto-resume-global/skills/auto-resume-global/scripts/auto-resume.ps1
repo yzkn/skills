@@ -61,16 +61,40 @@ try {
     $keepAwakeUntil = $null
     $launched = 0
 
+    # 利用者の入力ではない user の記録か (Claude Code が自分で差し込むもの)。
+    # 例: バックグラウンドのサブエージェントが終わった・失敗したときの通知 (<task-notification>。origin.kind = task-notification)、
+    #     isMeta の記録 (<system-reminder> など)。
+    # サブエージェントを動かしている間に上限に当たると、上限の記録の「あと」にこれらが付く (2026-11-13 に実物で確認)。
+    function Test-SyntheticUser($Record) {
+        if ($Record.type -ne 'user') { return $false }
+        if ($Record.PSObject.Properties['isMeta'] -and $Record.isMeta) { return $true }
+        if ($Record.PSObject.Properties['origin'] -and $Record.origin -and $Record.origin.PSObject.Properties['kind']) {
+            return ($Record.origin.kind -ne 'human')
+        }
+        if ($Record.PSObject.Properties['promptSource'] -and $Record.promptSource -eq 'system') { return $true }
+        # origin の無い版の記録: 文面で見分ける
+        $content = if ($Record.message) { $Record.message.content } else { $null }
+        if ($content -is [string] -and $content -match '^\s*<(task-notification|system-reminder)>') { return $true }
+        return $false
+    }
+
     # セッション記録の末尾から、最後の会話の記録 (user / assistant。サブエージェントを除く) を返す
-    function Get-LastTurn([string]$Path) {
-        $tail = @(Get-Content -LiteralPath $Path -Tail 80 -Encoding UTF8)   # 1 行だけのときも配列にする
-        for ($i = $tail.Count - 1; $i -ge 0; $i--) {
-            $line = $tail[$i]
-            if (-not $line.StartsWith('{"parentUuid"')) { continue }   # 会話の記録だけ (api-request-blob などを除く)
-            try { $r = $line | ConvertFrom-Json } catch { continue }
-            if ($r.type -ne 'user' -and $r.type -ne 'assistant') { continue }
-            if ($r.isSidechain) { continue }
-            return $r
+    # -SkipSynthetic: 利用者の入力ではない user の記録 (サブエージェントの通知など) を飛ばす
+    function Get-LastTurn([string]$Path, [switch]$SkipSynthetic) {
+        # まず末尾 80 行。サブエージェントが多く、上限の記録のあとの通知だけで埋まっていたら、400 行まで広げる
+        # (記録には巨大な行もあるので、いつも 400 行を読むと巡回が遅くなる)
+        foreach ($count in 80, 400) {
+            $tail = @(Get-Content -LiteralPath $Path -Tail $count -Encoding UTF8)   # 1 行だけのときも配列にする
+            for ($i = $tail.Count - 1; $i -ge 0; $i--) {
+                $line = $tail[$i]
+                if (-not $line.StartsWith('{"parentUuid"')) { continue }   # 会話の記録だけ (api-request-blob などを除く)
+                try { $r = $line | ConvertFrom-Json } catch { continue }
+                if ($r.type -ne 'user' -and $r.type -ne 'assistant') { continue }
+                if ($r.isSidechain) { continue }
+                if ($SkipSynthetic -and (Test-SyntheticUser $r)) { continue }
+                return $r
+            }
+            if ($tail.Count -lt $count) { break }   # 記録の先頭まで読んだ
         }
         return $null
     }
@@ -171,7 +195,8 @@ try {
         Where-Object { $_.LastWriteTime -ge $maxAge }
 
     foreach ($f in $files) {
-        $last = Get-LastTurn $f.FullName
+        # 上限の記録のあとにサブエージェントの通知が付いていても、利用者の入力とはみなさない
+        $last = Get-LastTurn $f.FullName -SkipSynthetic
         if (-not $last) { continue }
         if ($last.type -ne 'assistant') { continue }
         $isLimit = ($last.PSObject.Properties['apiError'] -and $last.apiError -eq 'usage_limit_reached') -or
