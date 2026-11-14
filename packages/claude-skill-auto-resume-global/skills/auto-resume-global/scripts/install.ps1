@@ -7,6 +7,8 @@
   2. インストール先に config.json を作る (既にあれば設定は残し、claude・pwsh・wt の場所だけ更新する)
   3. タスク ClaudeAutoResume を登録する: 一定間隔 (既定 10 分) / ログオン時 / スリープからの復帰時
      (解除時刻にスリープから起こすタスク ClaudeAutoResume-Wake は、auto-resume.ps1 が上限を見つけたときに登録する)
+     タスクは conhost.exe --headless で、ウィンドウを出さずに auto-resume.ps1 を起動する
+     (前の版の run-hidden.vbs (wscript.exe) は、Windows から VBScript が外されると動かなくなるため使わない)
   4. -EnableWakeTimers で、電源接続時のスリープ解除タイマーを「有効」にする (解除時刻にスリープから復帰できるように)
   5. -Action resume|wake で、解除後の動作 (config.json の action) を切り替える。既定は resume (新しいウィンドウで再開する)
      (wake は PC を起こしておくだけ。Claude Code は上限の解除後に止まったターンを自分では続けないので、別の仕組みが再開する場合だけに使う)
@@ -60,6 +62,7 @@ $defaults = [ordered]@{
     sleepOnLimit           = $false            # 上限で止まったら確認のうえスリープする (StopFailure フック。-EnableSleepOnLimit で true)
     sleepPromptSeconds     = 120               # スリープするまでの確認の秒数 (応答が無ければスリープ)
     sleepMinMinutes        = 15                # 解除までこの分より短ければスリープしない
+    sleepMaxHours          = 12                # 解除までこの時間より長ければ、確認の時間が過ぎてもスリープしない (「今すぐスリープ」ならスリープする)
     permissionMode         = 'fromSession'     # 止まったセッションの権限モードを引き継ぐ。固定するなら auto / acceptEdits / manual など
     fallbackPermissionMode = 'manual'          # セッションの記録にモードが無いとき (操作の許可を求めた時点で入力待ちになる)
     forkSession            = $true             # 新しいセッション ID に分けて再開する (止まったときのウィンドウと二重に書き込まない)
@@ -72,6 +75,7 @@ $defaults = [ordered]@{
     resumePrompt           = '利用上限で中断していました。上限が解除されたので、中断する直前の作業を、中断したところから続けてください。最初に、中断時点で何をしていたかを 1〜2 文で述べてから再開してください。バックグラウンドのサブエージェントも上限や再起動で止まっていれば、新しく起動し直さず、止まったところから続けさせてください。'
     rebootResumePrompt     = 'PC の再起動 (Windows Update など) で、作業の途中で中断していました。中断する直前の作業を、中断したところから続けてください。最初に、中断時点で何をしていたかを 1〜2 文で述べてから再開してください。バックグラウンドのサブエージェントも上限や再起動で止まっていれば、新しく起動し直さず、止まったところから続けさせてください。'
     maxRebootResumes       = 3                 # 自動で再開したセッションが再起動で中断したとき、続けて再開し直す回数の上限
+    debugLog               = $false            # true なら、巡回のたびに開始・終了の行をログに書く (復帰したのに再開されないときの調べ用)
 }
 if (Test-Path $ConfigPath) {
     $cur = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -90,7 +94,9 @@ Write-Host "config.json: $ConfigPath"
 
 # 3. タスク (時刻・ログオン・スリープ復帰のイベントの 3 つのきっかけ)
 $user = "$env:USERDOMAIN\$env:USERNAME"
-$vbs = Join-Path $Root 'run-hidden.vbs'
+# conhost.exe --headless <シェル> ...: ウィンドウを出さずに起動する (10 分ごとに画面がちらつかないように。VBScript を使わない)
+$taskShell = if ($defaults.shellPath -and (Test-Path -LiteralPath $defaults.shellPath)) { $defaults.shellPath } else { 'powershell.exe' }
+$taskArgs = [Security.SecurityElement]::Escape("--headless `"$taskShell`" -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Root 'auto-resume.ps1')`"")
 $start = (Get-Date).AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ss')
 $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -134,8 +140,8 @@ $xml = @"
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>wscript.exe</Command>
-      <Arguments>"$vbs"</Arguments>
+      <Command>conhost.exe</Command>
+      <Arguments>$taskArgs</Arguments>
     </Exec>
   </Actions>
 </Task>

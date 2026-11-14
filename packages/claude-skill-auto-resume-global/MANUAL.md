@@ -21,7 +21,7 @@
 | `skills/auto-resume-global/scripts/sleep-prompt.ps1` | (任意) 上限の確認・復帰タスクの登録・確認の画面 (既定 120 秒)・スリープ |
 | `skills/auto-resume-global/scripts/keep-awake.ps1` | （`action: wake`）指定した分だけ PC をスリープさせない（同時に 1 つ。再開はしない）  |
 | `skills/auto-resume-global/scripts/resume-session.ps1` | （`action: resume`）新しいウィンドウの中で claude を再開する（スリープ抑止） |
-| `skills/auto-resume-global/scripts/run-hidden.vbs` | タスクから巡回をウィンドウを出さずに起動する                           |
+| `skills/auto-resume-global/scripts/run-hidden.vbs` | 使っていない（タスクは `conhost.exe --headless` で起動する）。前の版で登録したタスクのために残している |
 | `skills/auto-resume-global/scripts/uninstall.ps1` | タスクを削除し、スリープ解除タイマーを元に戻す                         |
 
 ## 3. 導入手順
@@ -62,7 +62,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 
 ## 5. 導入後の検証
 
-1. タスクを確かめる。`Get-ScheduledTask ClaudeAutoResume` が `Ready` で、`Triggers` が 3 つ（時刻・ログオン・イベント）あること
+1. タスクを確かめる。`Get-ScheduledTask ClaudeAutoResume` が `Ready` で、`Triggers` が 3 つ（時刻・ログオン・イベント）あり、`Actions` が `conhost.exe --headless "<pwsh>" ... -File "<インストール先>\auto-resume.ps1"` であること（前の版の `wscript.exe run-hidden.vbs` なら `install.ps1` を実行し直す）。`config.json` の `debugLog` を `true` にして `Start-ScheduledTask ClaudeAutoResume` を実行し、`LastTaskResult` が 0 で、`logs/auto-resume.log` に「開始」「終了」の行が書かれ、ウィンドウが出ないことを確かめたら、`debugLog` を `false` に戻す
 2. 判断を確かめる。`auto-resume.ps1 -DryRun` を実行し、上限で止まっているセッションが無ければ「上限で止まっているセッションはありません」と出ること
 3. 試験用のセッション記録で確かめる（上限を人為的に起こせないため）。
    - 手順:
@@ -90,11 +90,25 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
    | `startedAt` が起動時刻より後でプロセスが無い (利用者が閉じた) | 再開しない |
    | `attempt` が `maxRebootResumes` + 1 | skip (回数を超えた) |
 6. スリープからの復帰を確かめる。`powercfg /query SCHEME_CURRENT SUB_SLEEP RTCWAKE` の AC の現在値が `0x00000001` であること（`-EnableWakeTimers` を付けた場合）
+7. 解除の直後・保留・同時起動を確かめる。試験用のフォルダにスクリプト一式の写しを置き、`config.json` の `claudePath` を引数を記録する代役（例: 引数をファイルに書いて 20 秒待つ `.cmd`）に、`terminalPath` を渡されたシェルを起動する代役に替える。**`-NoTask -ProjectsDir <記録のフォルダ> -StateDir <state のフォルダ>` を必ず付ける**
+   | 試験用のセッション記録 | 期待する動き |
+   |---|---|
+   | 末尾に巨大な行（30 万文字を超える）がある記録 | `-DryRun` が数秒以内に終わる（末尾 4 MB だけを読む） |
+   | 上限の記録の `timestamp` が 20 秒前（`resetsAt` は過ぎている） | 1 回目に「保留 … 上限の記録が新しい (n 秒前)」、約 40 秒後の 2 回目に「再開」。代役の claude は 1 回だけ起動し、`handled.json` に書かれ、`state/running/<分岐先の ID>.json` が現れる |
+   | 同じ写しで 2 つ同時に起動 | 後のほうは Mutex を待ってから動き、処理済みとして何もせずに「終了」を書く（黙って終わらない） |
+   | `apiError = model_requires_usage_credits` の記録 | `auto-resume.ps1 -DryRun` が解除時刻 + 3 分まで「待機」。`sleep-prompt.ps1 -DryRun -SimulateClick cancel` が上限の記録を見つける |
+   | 解除まで `sleepMaxHours` より長い記録 | `sleep-prompt.ps1 -DryRun -Seconds 3` が「スリープしない: 解除まで n 時間 (sleepMaxHours m 時間を超える)」 |
+8. 認証の確かめ方を見る。`sleep-prompt.ps1 -CheckAuthOnly` が「認証は有効です」か、切れているものの注意を出すこと
 
 ## 6. 既知の制約
 
 - Windows 専用
-- 上限の記録の形は Claude Code の内部形式。版が変わったら、`auto-resume.ps1` の `$isLimit` と `resetsAt` の読み取りを、実物の記録に合わせて直す
+- 上限の記録の形は Claude Code の内部形式。版が変わったら、`Test-LimitRecord`（`auto-resume.ps1` と `sleep-prompt.ps1` で同じもの）と `resetsAt` の読み取りを、実物の記録に合わせて直す。今の判定: `apiError` が `usage_limit_reached` か `model_requires_usage_credits`、または `error` が `rate_limit` で `resetsAt` があるもの
+- 末尾は 4 MB（会話の記録が無ければ 32 MB）までしか読まない。それより後ろに会話の記録が 1 つも無い記録は、止まったものとして見えない。権限モードも同じ末尾から探し、無ければ `fallbackPermissionMode` を使う
+- 解除の直後に起動されたとき、待つのは最大 5 回・5 分。それを過ぎたら 2 分後の復帰タスクに任せる。Mutex は 120 秒まで待つ
+- スリープを止める要求（`PowerCreateRequest`）は、無人のスリープのタイムアウトを止めるためのもの。利用者が自分でスリープさせたとき・電源ボタンは止めない。効いているかを `powercfg /requests` で見るには管理者権限が要る
+- タスクは `conhost.exe --headless` で起動する。`--headless` が使えない古い Windows では動かない（Windows 11 で確かめた）
+- `gh` / `glab` の認証の確かめは、終了コードだけで判断する。複数のホストにログインしていると、1 つでも切れていれば注意になる。10 秒で打ち切ったものは注意にしない。PowerShell 5.1 では、打ち切ったときに孫プロセスまでは止めない
 - `action: wake` は PC を起こしておくだけで、再開はしない。Claude Code は上限の解除後に止まったターンを自分では続けない（元のウィンドウは上限のメッセージのまま止まる）ので、別の仕組みが再開する場合だけに使う
 - `action: resume` で、解除時刻 + 3 分から最初の巡回（最大 10 分）までの間に元のウィンドウで入力しないと、自動で再開したウィンドウも開く
 - PC の電源が切れている間は再開しない（次のログオン時に再開する）
@@ -128,6 +142,18 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 同じ日、再開は別のセッション (`--fork-session`) になるため、元のセッションに張っていた Remote Control の接続が切れ、スマートフォンから続きを見られなくなった。そこで、再開する claude を `--remote-control <名前>` つき (起動後に `/remote-control` を実行したのと同じ) で起動するようにした (`remoteControl`。既定 `true`)。名前は省略できる引数なので、後ろの指示を名前と取り違えないよう、常に名前を渡す。
 
 2026-11-13 には、バックグラウンドのサブエージェント 4 本を動かしている間に上限で止まったセッションが、スリープも解除後の再開もされなかった。上限の記録のあとに、サブエージェントが失敗したという通知が `user` の記録（`origin.kind = task-notification`）として付き、「最後の会話の記録」が上限の記録でなくなっていた。巡回は「上限のあとに利用者が入力した」とみなし、スリープの確認は「利用上限の記録が無い」とみなしていた。そこで、利用者の入力ではない `user` の記録を飛ばして最後の会話の記録を探すようにした（`auto-resume.ps1` の `Test-SyntheticUser`、`sleep-prompt.ps1` の `$isSynthetic`）。利用者が実際に入力した記録（`origin.kind = human`）は飛ばさない。あわせて、再開時の指示に「サブエージェントも止まっていれば、起動し直さず続きから」を足した。止まった時点の実物の記録の写しで、`-DryRun` の判断が「再開」になることを確かめた。
+
+2026-11-14 には、解除時刻に復帰タスクで PC が起きたのに再開されず、2 分ほどでまたスリープした。巡回は 38 秒動いたが、何も起動せず、ログも書かず、復帰タスクを消していた。その時点の記録の写しでは判断は「再開」になるので、実行時の状態で飛ばされた。黙って飛ばす箇所は「書き込み中」（記録の更新が 1 分以内）の 1 つだけで、飛ばしたセッションは次の復帰時刻にも数えなかった（復帰した直後の claude は動き出していたが、記録を書いたかは確かめられなかった）。また、末尾 80 行に 30 万文字を超える行があると `Get-Content -Tail` が 30 秒以上かかり、そのぶん無人のスリープのタイムアウトに近づいていた。同じ日に、別の形の上限の記録（`model_requires_usage_credits`）をスリープの確認だけが上限とみなさなかったこと、解除が 5 日後の週の上限でも確認の時間切れでスリープしたこと、タスクの起動に使う VBScript が Windows から外されていく（`VBScriptDeprecationAlert`）ことも分かった。そこで次のようにした。
+
+- 末尾をバイト単位で直接読む（4 MB、足りなければ 32 MB）。巡回が 1 秒前後で終わる
+- 上限の記録の判定を 1 つにし（`Test-LimitRecord`）、2 つのスクリプトで同じものを使う
+- 「書き込み中」の飛ばしをやめ、上限の記録が 60 秒より新しければ「保留」としてログに書き、同じプロセスのまま待って調べ直す。90 秒以内に再開の時刻になるものも同じ。待っているものがある間は復帰タスクを消さない
+- 再開しなかった理由をログに書く。`debugLog` で毎回の開始・終了も書ける
+- 動いている間は `PowerCreateRequest` でスリープを止め、再開したウィンドウが印を置くまで待つ。`resume-session.ps1` も同じ要求を持つ
+- Mutex は 120 秒まで待つ（復帰タスクとスリープ復帰のイベントの起動が重なっても、後のほうが黙って終わらない）
+- タスクは `conhost.exe --headless` で起動する（VBScript を使わない）
+- 解除まで `sleepMaxHours`（既定 12 時間）より長ければ、確認の時間切れでスリープしない
+- スリープの前に `gh` / `glab` の認証を確かめ、切れていれば確認の画面に出す（`-CheckAuthOnly` で単独でも確かめられる）
 
 ## 8. 公開前チェック
 
