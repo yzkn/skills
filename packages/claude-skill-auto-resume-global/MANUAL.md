@@ -34,9 +34,10 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 
 `install.ps1` が行うこと:
 
-1. スクリプト一式を `-InstallDir`（既定 `~/.claude/auto-resume`）にコピーする。スキルの置き場所に依存せず動く。スキルを消しても、自動再開は止まらない
+0. 前の版（フォルダ `~/.claude/auto-resume`、タスク `ClaudeAutoResume` / `ClaudeAutoResume-Wake`）が入っていれば、`install.ps1` が移行する: 設定・状態・ログを新しいインストール先に写し、前のフォルダのスクリプトを起動するタスクを消し、`settings.json` のフックを付け替え、前のフォルダに `disabled` を置く（前のフォルダは消さない。確かめたら消してよい）
+1. スクリプト一式を `-InstallDir`（既定 `~/.claude/auto-resume-global`）にコピーする。スキルの置き場所に依存せず動く。スキルを消しても、自動再開は止まらない
 2. `config.json` を作る。既にあれば設定は残し、`claude`・`pwsh`・`wt` の場所だけ更新し、無い設定（`action: resume`・`keepAwakeMinutes: 20` など）を足す。`-Action resume|wake` で `action` を切り替えるclaude を入れ直して場所が変わったら、実行し直す
-3. タスク `ClaudeAutoResume` を登録する。きっかけは 3 つ:
+3. タスク `ClaudeAutoResumeGlobal` を登録する。きっかけは 3 つ:
    - `-IntervalMinutes` ごと（既定 10 分）
    - ログオンの 1 分後
    - スリープからの復帰の 1 分後
@@ -62,7 +63,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 
 ## 5. 導入後の検証
 
-1. タスクを確かめる。`Get-ScheduledTask ClaudeAutoResume` が `Ready` で、`Triggers` が 3 つ（時刻・ログオン・イベント）あり、`Actions` が `conhost.exe --headless "<pwsh>" ... -File "<インストール先>\auto-resume.ps1"` であること（前の版の `wscript.exe run-hidden.vbs` なら `install.ps1` を実行し直す）。`config.json` の `debugLog` を `true` にして `Start-ScheduledTask ClaudeAutoResume` を実行し、`LastTaskResult` が 0 で、`logs/auto-resume.log` に「開始」「終了」の行が書かれ、ウィンドウが出ないことを確かめたら、`debugLog` を `false` に戻す
+1. タスクを確かめる。`Get-ScheduledTask ClaudeAutoResumeGlobal` が `Ready` で、`Triggers` が 3 つ（時刻・ログオン・イベント）あり、`Actions` が `conhost.exe --headless "<pwsh>" ... -File "<インストール先>\auto-resume.ps1"` であること（前の版の `wscript.exe run-hidden.vbs` なら `install.ps1` を実行し直す）。`config.json` の `debugLog` を `true` にして `Start-ScheduledTask ClaudeAutoResumeGlobal` を実行し、`LastTaskResult` が 0 で、`logs/auto-resume.log` に「開始」「終了」の行が書かれ、ウィンドウが出ないことを確かめたら、`debugLog` を `false` に戻す
 2. 判断を確かめる。`auto-resume.ps1 -DryRun` を実行し、上限で止まっているセッションが無ければ「上限で止まっているセッションはありません」と出ること
 3. 試験用のセッション記録で確かめる（上限を人為的に起こせないため）。
    - 手順:
@@ -73,7 +74,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
      |---|---|
      | 解除済み（`action: wake`） | 解除時刻 + 3 分 + `keepAwakeMinutes` まで PC を起こしておく（`(DryRun) N 分 (… まで) PC を起こしておく`） |
      | 解除済み（`action: resume`） | 再開する |
-     | 解除前 | 待機し、解除時刻 + 3 分に `ClaudeAutoResume-Wake` を登録する |
+     | 解除前 | 待機し、解除時刻 + 3 分に `ClaudeAutoResumeGlobal-Wake` を登録する |
      | 上限のあとに入力あり | 対象外 |
    - `keep-awake.ps1 -Minutes 2` を 2 つ続けて起動し、先のものが止まって後のものだけが残ること（同時に 1 つ）
    - 起動まで確かめるときは、インストール先のコピーで `config.json` の `claudePath` を引数を記録する代役に替える。作業ディレクトリと引数（`--resume <id> --fork-session --session-id <分岐先> --remote-control <名前> --permission-mode <モード> <指示>`。`remoteControl: false` なら `--remote-control` は付かない）を確かめる
@@ -135,7 +136,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 - `--fork-session` で再開する
 - 解除時刻に WakeToRun のタスクを登録する
 
-その後、既定の動作を「PC を起こしてしばらく起こしておくだけ」（`action: wake`）に変えた。Claude Code 自体が上限の解除後に続きを進めると見込んだためである。しかし実際には、解除時刻にスリープから復帰しても作業は再開しなかった（2026-11-09、復帰のログは `ClaudeAutoResume-Wake`、ウィンドウは上限のメッセージのまま）。Claude Code は上限の解除後に止まったターンを自分では続けない。そこで既定を `action: resume`（新しいウィンドウで再開し、claude が動いている間はスリープさせない）に戻し、`wake` は別の仕組みが再開する場合のために残した。
+その後、既定の動作を「PC を起こしてしばらく起こしておくだけ」（`action: wake`）に変えた。Claude Code 自体が上限の解除後に続きを進めると見込んだためである。しかし実際には、解除時刻にスリープから復帰しても作業は再開しなかった（2026-11-09、復帰のログは `ClaudeAutoResumeGlobal-Wake`、ウィンドウは上限のメッセージのまま）。Claude Code は上限の解除後に止まったターンを自分では続けない。そこで既定を `action: resume`（新しいウィンドウで再開し、claude が動いている間はスリープさせない）に戻し、`wake` は別の仕組みが再開する場合のために残した。
 
 2026-11-13 には、解除時刻 (03:30) の復帰と再開 (03:33) はできたが、再開したセッションが 04:45 ごろ Windows Update (機能更新) の計画済みの再起動で、ツールの結果を返した直後に終わった。再起動後の記録は最後がツールの結果で上限の記録ではないため、巡回では拾えず、そのまま止まっていた。そこで、再開した claude が動いている印 (`state/running/`) を置き、再起動で残った印から、作業の途中で終わったセッションをもう一度再開するようにした。あわせて、Windows Terminal の場所を版を含まない実行エイリアスにした (版を含む場所は Terminal の更新で無くなる)。
 
@@ -154,6 +155,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 - タスクは `conhost.exe --headless` で起動する（VBScript を使わない）
 - 解除まで `sleepMaxHours`（既定 12 時間）より長ければ、確認の時間切れでスリープしない
 - スリープの前に `gh` / `glab` の認証を確かめ、切れていれば確認の画面に出す（`-CheckAuthOnly` で単独でも確かめられる）
+
+2026-11-14 には、インストール先のフォルダ（`~/.claude/auto-resume`）とタスク名（`ClaudeAutoResume`）を、スキル名に合わせて `~/.claude/auto-resume-global` と `ClaudeAutoResumeGlobal` に改めた。同じリポジトリにプロジェクト単位の別のスキル `auto-resume` があり、人が見たときに区別しにくかったためである。Mutex と型の名前もそろえた。前の版からは `install.ps1` を実行し直すだけで移行できる。
 
 ## 8. 公開前チェック
 

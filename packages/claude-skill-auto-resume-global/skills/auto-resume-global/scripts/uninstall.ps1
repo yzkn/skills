@@ -6,7 +6,8 @@
   スクリプト・設定・ログ (このフォルダ) は残す。一時的に止めるだけなら、このフォルダに disabled という空ファイルを置く。
 #>
 param([switch]$RestoreWakeTimers, [string]$SettingsPath = (Join-Path $env:USERPROFILE '.claude\settings.json'))
-foreach ($name in @('ClaudeAutoResume', 'ClaudeAutoResume-Wake')) {
+# 前の版の名前 (ClaudeAutoResume / ClaudeAutoResume-Wake) が残っていれば、それも消す
+foreach ($name in @('ClaudeAutoResumeGlobal', 'ClaudeAutoResumeGlobal-Wake', 'ClaudeAutoResume', 'ClaudeAutoResume-Wake')) {
     if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $name -Confirm:$false
         Write-Host "削除: $name"

@@ -37,9 +37,9 @@ Claude Code の利用上限（5 時間・週）で対話セッションが止ま
 ```
 上限で停止 ─▶ セッション記録の最後の会話が上限の記録（usage_limit_reached など。Test-LimitRecord）になる
                 │
-タスク ClaudeAutoResume（10 分ごと / ログオン時 / スリープ復帰時。conhost.exe --headless で起動）
+タスク ClaudeAutoResumeGlobal（10 分ごと / ログオン時 / スリープ復帰時。conhost.exe --headless で起動）
                 │  auto-resume.ps1 が全プロジェクトのセッション記録の末尾を調べる（動いている間はスリープさせない）
-                ├─ まだ解除前 ─▶ 解除時刻 + 3 分 に、スリープから復帰して起動するタスク ClaudeAutoResume-Wake を登録
+                ├─ まだ解除前 ─▶ 解除時刻 + 3 分 に、スリープから復帰して起動するタスク ClaudeAutoResumeGlobal-Wake を登録
                 ├─ 90 秒以内に解除時刻 + 3 分 になる / 上限の記録が 60 秒より新しい（保留）
                 │     ─▶ タスクを登録せず、このまま待って調べ直す（最大 5 回・5 分。残れば 2 分後の復帰タスク）
                 └─ 解除時刻 + 3 分 を過ぎた
@@ -51,7 +51,7 @@ Claude Code の利用上限（5 時間・週）で対話セッションが止ま
 | 状況 | どうなるか |
 |---|---|
 | PC が起きている | 10 分ごとの巡回で処理する（`wake` は起こしておくだけ、`resume` は解除時刻 + 3 分を過ぎてから最大 10 分で再開） |
-| スリープ中に解除時刻が来る | `ClaudeAutoResume-Wake`（WakeToRun）が PC を起こして処理する。電源接続時の「スリープ解除タイマー」が有効な場合だけ |
+| スリープ中に解除時刻が来る | `ClaudeAutoResumeGlobal-Wake`（WakeToRun）が PC を起こして処理する。電源接続時の「スリープ解除タイマー」が有効な場合だけ |
 | スリープ・休止から手動で復帰 | 復帰のイベント（System ログ、Power-Troubleshooter、イベント ID 1）で起動する |
 | PC を終了していた | 次のログオンの 1 分後に処理する。電源を自動で入れることはしない（BIOS / UEFI の RTC 起動は扱わない） |
 | 自動で再開したセッションが、作業の途中で PC の再起動（Windows Update など）に遭った | 次のログオンの 1 分後に、そのセッションをもう一度再開する（下記） |
@@ -96,7 +96,7 @@ auto-resume.ps1（ログオン時など）
                 │  sleep-prompt.ps1 を別のプロセスで起動
                 ├─ セッション記録の最後の会話が上限の記録 (Test-LimitRecord。auto-resume.ps1 と同じ判定) でなければ (一時的な 429 など) 何もしない
                 ├─ 解除まで sleepMinMinutes (既定 15 分) 未満なら何もしない
-                ├─ auto-resume.ps1 を実行し、解除時刻 + 3 分に復帰するタスク ClaudeAutoResume-Wake を登録
+                ├─ auto-resume.ps1 を実行し、解除時刻 + 3 分に復帰するタスク ClaudeAutoResumeGlobal-Wake を登録
                 ├─ gh / glab の認証を確かめる (PATH にあるときだけ。各 10 秒まで)
                 └─ 確認の画面 (既定 120 秒の残り時間)
                       ├─ 「今すぐスリープ」 ─▶ Windows をスリープ (SetSuspendState)
@@ -110,7 +110,9 @@ auto-resume.ps1（ログオン時など）
 - 複数のセッションが同時に上限に当たっても、確認は 1 つ (Mutex)
 - 解除時刻に起こされたあとは、既定の `resume` の動作で、新しいウィンドウで続きから再開する（再開した claude が動いている間はスリープさせない）
 
-### ファイル（インストール先、既定 `~/.claude/auto-resume/`）
+### ファイル（インストール先、既定 `~/.claude/auto-resume-global/`）
+
+前の版（フォルダ `~/.claude/auto-resume`、タスク `ClaudeAutoResume` / `ClaudeAutoResume-Wake`）が入っていれば、`install.ps1` が移行する: 設定・状態・ログを新しいインストール先に写し、前のフォルダのスクリプトを起動するタスクを消し、`settings.json` のフックを付け替え、前のフォルダに `disabled` を置く（前のフォルダは消さない。確かめたら消してよい）。
 
 | ファイル | 役割 |
 |---|---|
@@ -151,15 +153,15 @@ auto-resume.ps1（ログオン時など）
 
 ## 使い方
 
-`<skill>` はこのスキルのフォルダ（`.claude/skills/auto-resume-global` または `~/.claude/skills/auto-resume-global`）。インストール後は `~/.claude/auto-resume/` のスクリプトを使う。
+`<skill>` はこのスキルのフォルダ（`.claude/skills/auto-resume-global` または `~/.claude/skills/auto-resume-global`）。インストール後は `~/.claude/auto-resume-global/` のスクリプトを使う。
 
 | 操作 | コマンド |
 |---|---|
 | `install` | `pwsh -File <skill>/scripts/install.ps1 [-EnableWakeTimers] [-EnableSleepOnLimit] [-IntervalMinutes 10] [-InstallDir <パス>]` |
-| スリープの取り消し | `pwsh -File ~/.claude/auto-resume/install.ps1 -DisableSleepOnLimit` (フックを外し、`sleepOnLimit` を `false` にする) |
-| `status` | `pwsh -File ~/.claude/auto-resume/auto-resume.ps1 -DryRun`（何も起動せず、待機中・起こしておく・再開予定のセッションを表示する） |
-| `pause` / `resume` | `New-Item ~/.claude/auto-resume/disabled` / `Remove-Item ~/.claude/auto-resume/disabled` |
-| `uninstall` | `pwsh -File ~/.claude/auto-resume/uninstall.ps1 [-RestoreWakeTimers]` |
+| スリープの取り消し | `pwsh -File ~/.claude/auto-resume-global/install.ps1 -DisableSleepOnLimit` (フックを外し、`sleepOnLimit` を `false` にする) |
+| `status` | `pwsh -File ~/.claude/auto-resume-global/auto-resume.ps1 -DryRun`（何も起動せず、待機中・起こしておく・再開予定のセッションを表示する） |
+| `pause` / `resume` | `New-Item ~/.claude/auto-resume-global/disabled` / `Remove-Item ~/.claude/auto-resume-global/disabled` |
+| `uninstall` | `pwsh -File ~/.claude/auto-resume-global/uninstall.ps1 [-RestoreWakeTimers]` |
 
 `pwsh` が無ければ `powershell -NoProfile -ExecutionPolicy Bypass -File` で同じように動く（PowerShell 5.1 対応）。管理者権限は不要。
 

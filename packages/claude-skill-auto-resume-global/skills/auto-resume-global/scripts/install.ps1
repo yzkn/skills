@@ -2,11 +2,11 @@
 .SYNOPSIS
   Claude Code の利用上限 (5 時間・週) からの自動再開を、この PC 全体 (全プロジェクト) に設定する。何度実行してもよい。
 .DESCRIPTION
-  1. このスクリプトと同じフォルダのスクリプト一式を、インストール先 (既定 ~/.claude/auto-resume) にコピーする
+  1. このスクリプトと同じフォルダのスクリプト一式を、インストール先 (既定 ~/.claude/auto-resume-global) にコピーする
      (スキルの置き場所に依存せず動くようにするため。スキルを削除・移動しても自動再開は止まらない)
   2. インストール先に config.json を作る (既にあれば設定は残し、claude・pwsh・wt の場所だけ更新する)
-  3. タスク ClaudeAutoResume を登録する: 一定間隔 (既定 10 分) / ログオン時 / スリープからの復帰時
-     (解除時刻にスリープから起こすタスク ClaudeAutoResume-Wake は、auto-resume.ps1 が上限を見つけたときに登録する)
+  3. タスク ClaudeAutoResumeGlobal を登録する: 一定間隔 (既定 10 分) / ログオン時 / スリープからの復帰時
+     (解除時刻にスリープから起こすタスク ClaudeAutoResumeGlobal-Wake は、auto-resume.ps1 が上限を見つけたときに登録する)
      タスクは conhost.exe --headless で、ウィンドウを出さずに auto-resume.ps1 を起動する
      (前の版の run-hidden.vbs (wscript.exe) は、Windows から VBScript が外されると動かなくなるため使わない)
   4. -EnableWakeTimers で、電源接続時のスリープ解除タイマーを「有効」にする (解除時刻にスリープから復帰できるように)
@@ -20,7 +20,7 @@
   pwsh -File install.ps1 -EnableWakeTimers -EnableSleepOnLimit
 #>
 param(
-    [string]$InstallDir = (Join-Path $env:USERPROFILE '.claude\auto-resume'),
+    [string]$InstallDir = (Join-Path $env:USERPROFILE '.claude\auto-resume-global'),
     [int]$IntervalMinutes = 10,
     [switch]$EnableWakeTimers,
     [ValidateSet('resume', 'wake')][string]$Action,
@@ -29,6 +29,39 @@ param(
     [string]$SettingsPath = (Join-Path $env:USERPROFILE '.claude\settings.json')
 )
 $ErrorActionPreference = 'Stop'
+
+# 0. 前の版の名前からの移行 (2026-11-14 まで: フォルダ ~/.claude/auto-resume、タスク ClaudeAutoResume / ClaudeAutoResume-Wake)
+#    同じリポジトリにある別のスキル auto-resume (プロジェクト単位) と区別しやすいよう、auto-resume-global にそろえた。
+#    前のフォルダがこのスキルのもの (auto-resume.ps1 と resume-session.ps1 がある) で、新しいインストール先にまだ config.json が無ければ、
+#    設定・状態・ログを新しいインストール先に写す。前のフォルダは消さずに disabled を置く (古いタスクやフックが残っていても何もしない)。
+$oldDir = Join-Path $env:USERPROFILE '.claude\auto-resume'
+$isOldInstall = (Test-Path (Join-Path $oldDir 'auto-resume.ps1')) -and (Test-Path (Join-Path $oldDir 'resume-session.ps1')) -and (Test-Path (Join-Path $oldDir 'config.json'))
+$migrated = $false
+if ($isOldInstall -and ((Resolve-Path $oldDir).Path -ne [IO.Path]::GetFullPath($InstallDir)) -and -not (Test-Path (Join-Path $InstallDir 'config.json'))) {
+    if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir | Out-Null }
+    Copy-Item -LiteralPath (Join-Path $oldDir 'config.json') -Destination (Join-Path $InstallDir 'config.json')
+    foreach ($d in @('state', 'logs')) {
+        $from = Join-Path $oldDir $d
+        if (Test-Path $from) { Copy-Item -LiteralPath $from -Destination $InstallDir -Recurse -Force }
+    }
+    $migrated = $true
+    Write-Host "前の版のフォルダから設定・状態・ログを写しました: $oldDir -> $InstallDir"
+}
+# 前の版のタスクは、前のフォルダのスクリプトを起動するものだけ消す
+foreach ($name in @('ClaudeAutoResume', 'ClaudeAutoResume-Wake')) {
+    $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if ($t -and (($t.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join ' ') -like "*$oldDir\*") {
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false
+        Write-Host "前の版のタスクを削除しました: $name"
+    }
+}
+if ($isOldInstall -and (Test-Path (Join-Path $InstallDir 'config.json')) -and ((Resolve-Path $oldDir).Path -ne [IO.Path]::GetFullPath($InstallDir))) {
+    $note = Join-Path $oldDir 'disabled'
+    if (-not (Test-Path $note)) {
+        [IO.File]::WriteAllText($note, "auto-resume-global は $InstallDir に移りました。このフォルダは使っていません (消してかまいません)。`r`n", (New-Object Text.UTF8Encoding $false))
+        Write-Host "前の版のフォルダに disabled を置きました (消してかまいません): $oldDir"
+    }
+}
 
 # 1. スクリプト一式をインストール先へ (インストール先から実行したときはそのまま)
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir | Out-Null }
@@ -146,8 +179,8 @@ $xml = @"
   </Actions>
 </Task>
 "@
-Register-ScheduledTask -TaskName 'ClaudeAutoResume' -Xml $xml -Force | Out-Null
-Write-Host "タスク ClaudeAutoResume を登録しました ($IntervalMinutes 分ごと・ログオン時・スリープ復帰時)"
+Register-ScheduledTask -TaskName 'ClaudeAutoResumeGlobal' -Xml $xml -Force | Out-Null
+Write-Host "タスク ClaudeAutoResumeGlobal を登録しました ($IntervalMinutes 分ごと・ログオン時・スリープ復帰時)"
 
 # 4. スリープ解除タイマー (電源接続時のみ)
 if ($EnableWakeTimers) {
@@ -165,6 +198,13 @@ if ($EnableWakeTimers) {
 }
 
 # 5. 上限で止まったらスリープするフック (~/.claude/settings.json の StopFailure)
+# 前の版のフォルダのフックが残っていれば、指定が無くても新しいインストール先に付け替える (sleepOnLimit の設定に従う)
+if (-not ($EnableSleepOnLimit -or $DisableSleepOnLimit) -and (Test-Path $SettingsPath) -and
+    ((Get-Content $SettingsPath -Raw -Encoding UTF8) -replace '\\\\', '\') -like "*$oldDir\sleep-on-limit.ps1*" -and
+    ([IO.Path]::GetFullPath($oldDir) -ne $Root)) {
+    if ($defaults.sleepOnLimit) { $EnableSleepOnLimit = [switch]::Present } else { $DisableSleepOnLimit = [switch]::Present }
+    Write-Host '前の版のフォルダを指すフック StopFailure を付け替えます'
+}
 if ($EnableSleepOnLimit -or $DisableSleepOnLimit) {
     $settings = if (Test-Path $SettingsPath) { Get-Content $SettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { [pscustomobject]@{} }
     if (Test-Path $SettingsPath) {
