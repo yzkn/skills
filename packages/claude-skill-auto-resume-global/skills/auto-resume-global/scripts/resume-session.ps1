@@ -6,7 +6,7 @@
     分岐先の ID は auto-resume.ps1 が決めて -NewSessionId で渡す (--session-id)。
   - --remote-control <名前> で Remote Control を有効にして起動する (config.json の remoteControl。既定 true)。
     再開すると別のセッションになり、元のセッションのリモート接続は切れるため、スマートフォンから接続し直せるようにする。
-  - 再開した claude が終わるまで、PC がスリープしないようにする (SetThreadExecutionState)
+  - 再開した claude が終わるまで、PC がスリープしないようにする (PowerCreateRequest の要求と SetThreadExecutionState)
   - 動いている間は state/running/<分岐先の ID>.json を置き、claude が終われば消す。
     PC の再起動 (Windows Update など) で claude ごと終わると、この印が残る。auto-resume.ps1 は、次の起動 (ログオン時) に
     「印が残っていて、印より後に OS が起動した」セッションを、作業の途中で中断したものとして、もう一度再開する。
@@ -33,7 +33,44 @@ foreach ($n in @('CLAUDECODE', 'CLAUDE_PID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUD
 
 $cfg = Get-Content (Join-Path $PSScriptRoot 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
-Add-Type -Namespace ClaudeAutoResume -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);'
+# スリープさせない要求 (PowerCreateRequest / PowerSetRequest(PowerRequestSystemRequired))。auto-resume.ps1 と同じもの。
+# 要求はプロセスが持つハンドルに付き、スレッドに依らない。SetThreadExecutionState も併せて使う。どちらも claude が終われば解く
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace ClaudeAutoResume {
+    public static class Power {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct REASON_CONTEXT {
+            public uint Version;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.LPWStr)] public string SimpleReasonString;
+        }
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr PowerCreateRequest(ref REASON_CONTEXT context);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool PowerSetRequest(IntPtr handle, int requestType);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool PowerClearRequest(IntPtr handle, int requestType);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);
+        // PowerRequestSystemRequired (1) の要求を作って有効にする。できなければ IntPtr.Zero
+        public static IntPtr Request(string reason) {
+            REASON_CONTEXT c = new REASON_CONTEXT();
+            c.Version = 0;   // POWER_REQUEST_CONTEXT_VERSION
+            c.Flags = 1;     // POWER_REQUEST_CONTEXT_SIMPLE_STRING
+            c.SimpleReasonString = reason;
+            IntPtr h = PowerCreateRequest(ref c);
+            if (h == IntPtr.Zero || h == new IntPtr(-1)) return IntPtr.Zero;
+            if (!PowerSetRequest(h, 1)) { CloseHandle(h); return IntPtr.Zero; }
+            return h;
+        }
+        public static void Release(IntPtr h) {
+            if (h == IntPtr.Zero) return;
+            PowerClearRequest(h, 1);
+            CloseHandle(h);
+        }
+    }
+}
+'@
+$powerRequest = [ClaudeAutoResume.Power]::Request("Claude Code の自動再開: 再開したセッション ($SessionId) が動いている")
 [ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000001') | Out-Null   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
 
 Set-Location -LiteralPath $Cwd
@@ -89,5 +126,6 @@ try {
 finally {
     # 正常に終わった (利用者が閉じた・終了した) ときだけ消える。再起動で強制終了されたときは残る
     if ($marker -and (Test-Path $marker)) { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue }
+    [ClaudeAutoResume.Power]::Release($powerRequest)
     [ClaudeAutoResume.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null   # スリープ抑止を解除
 }

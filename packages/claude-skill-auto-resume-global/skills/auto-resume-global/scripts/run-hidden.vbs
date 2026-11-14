@@ -1,3 +1,5 @@
+' 使っていない (2026-11-14 から、タスクは conhost.exe --headless で auto-resume.ps1 を起動する。VBScript は Windows から外されていくため)。
+' 前の版で登録したタスクがこのファイルを指していることがあるので、残している。install.ps1 を実行し直せば、タスクは conhost.exe に替わる。
 ' タスク スケジューラから auto-resume.ps1 をウィンドウを出さずに起動する (10 分ごとに画面がちらつかないように)
 Set fso = CreateObject("Scripting.FileSystemObject")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)
