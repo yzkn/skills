@@ -46,6 +46,7 @@ Claude Code の利用上限（5 時間・週）で対話セッションが止ま
                       ├─ action=wake          ─▶ keep-awake.ps1 で、解除時刻 + 3 分 + 20 分 まで PC をスリープさせない (再開はしない)
                       └─ action=resume（既定）─▶ 新しいウィンドウで
                                                  claude --resume <id> --fork-session --remote-control <名前> --permission-mode <元のモード> "続けて…"
+                                                 （裏で archive-remote-session.ps1: 新しい方の Remote Control がつながったら、前のセッションのものを archive）
 ```
 
 | 状況 | どうなるか |
@@ -122,6 +123,7 @@ auto-resume.ps1（ログオン時など）
 | `sleep-on-limit.ps1` | (任意) Claude Code の StopFailure フック。sleep-prompt.ps1 を起動してすぐ終わる |
 | `sleep-prompt.ps1` | (任意) 上限の記録の確認・復帰タスクの登録・認証の確認・確認の画面・スリープ。`-DryRun` で判断だけをログに書く。`-CheckAuthOnly` で gh / glab の認証だけを確かめる |
 | `resume-session.ps1` | （`resume`）新しいウィンドウの中で claude を再開する。終わるまで PC をスリープさせない |
+| `archive-remote-session.ps1` | （`resume`）前のセッションの Remote Control のセッションを archive する（resume-session.ps1 が裏で起動）。`-DryRun` で、archive する ID と URL だけを表示する |
 | `run-hidden.vbs` | 使っていない（タスクは `conhost.exe --headless` で起動する）。前の版で登録したタスクのために残している |
 | `config.json` | 設定（下表） |
 | `state/handled.json` / `logs/auto-resume.log` | 処理済みの記録（14 日で消す） / 実行の記録（1 MB で切り替え） |
@@ -142,6 +144,7 @@ auto-resume.ps1（ログオン時など）
 | `forkSession` | `true` | （`resume`）新しいセッション ID に分けて再開する |
 | `remoteControl` | `true` | （`resume`）再開した claude を `--remote-control` つきで起動する（起動後に `/remote-control` を実行したのと同じ）。再開は別のセッションになり元のリモート接続は切れるので、スマートフォンの Claude アプリなどから新しいセッションへ接続し直せるようにする |
 | `remoteControlName` | `""` | （`resume`）Remote Control のセッション名。空なら `<フォルダー名> (上限後の再開 MM/dd HH:mm)`（再起動からの再開は「再起動後の再開」） |
+| `archivePreviousRemoteSession` | `true` | （`resume`、`forkSession` のとき）前のセッションに付いていた Remote Control のセッションを archive する。claude が終了時に archive するのは正常に終わったときだけで、止まったウィンドウが開いたまま・再起動で強制終了だと一覧に残って紛らわしいため。前のセッションの記録の `bridge-session` の行からブリッジの ID（`cse_…`）を読み、新しい方がつながってから（最大 300 秒待つ。つながらなければ残す）、Claude Code と同じ API（`POST /v1/code/sessions/<id>/archive`）を Claude Code のログイン情報で呼ぶ。トークンは更新しない。結果は `logs/auto-resume.log` に `archive-remote:` で書く。archive は削除ではない（Claude Code にも unarchive の API がある） |
 | `marginMinutes` / `fallbackWaitMinutes` | `3` / `60` | 解除時刻から待つ分 / 解除時刻が記録に無いときに待つ分 |
 | `maxAgeHours` | `192` | これより前に止まったセッションは扱わない |
 | `excludeCwd` | `[]` | 扱わない作業ディレクトリ（ワイルドカード可） |

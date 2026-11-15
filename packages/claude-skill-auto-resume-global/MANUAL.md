@@ -78,6 +78,7 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
      | 上限のあとに入力あり | 対象外 |
    - `keep-awake.ps1 -Minutes 2` を 2 つ続けて起動し、先のものが止まって後のものだけが残ること（同時に 1 つ）
    - 起動まで確かめるときは、インストール先のコピーで `config.json` の `claudePath` を引数を記録する代役に替える。作業ディレクトリと引数（`--resume <id> --fork-session --session-id <分岐先> --remote-control <名前> --permission-mode <モード> <指示>`。`remoteControl: false` なら `--remote-control` は付かない）を確かめる
+   - 前のセッションの Remote Control の archive は `archive-remote-session.ps1 -SessionId <前のセッション> -NewSessionId <新しいセッション> -DryRun` で、記録から読んだブリッジの ID（`cse_…`）と呼ぶ URL を確かめる。前のセッションの記録に `bridge-session` の行が無ければ skip、新しい方に無ければ（`-DryRun` でないとき）300 秒待って skip
 4. (`-EnableSleepOnLimit` の場合) スリープの判断を確かめる。試験用のセッション記録 (最後の会話が上限の記録) を作り、
    `sleep-prompt.ps1 -DryRun -TranscriptPath <記録> -SimulateClick cancel` (または `sleep`、`-Seconds 3` で時間切れ) を実行して、`logs/auto-resume.log` に「キャンセル」「スリープする」と書かれること。
    上限の記録が無い記録では「スリープしない: 利用上限の記録が無い」、解除まで 15 分未満では「スリープしない」と書かれること
@@ -141,6 +142,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 2026-11-13 には、解除時刻 (03:30) の復帰と再開 (03:33) はできたが、再開したセッションが 04:45 ごろ Windows Update (機能更新) の計画済みの再起動で、ツールの結果を返した直後に終わった。再起動後の記録は最後がツールの結果で上限の記録ではないため、巡回では拾えず、そのまま止まっていた。そこで、再開した claude が動いている印 (`state/running/`) を置き、再起動で残った印から、作業の途中で終わったセッションをもう一度再開するようにした。あわせて、Windows Terminal の場所を版を含まない実行エイリアスにした (版を含む場所は Terminal の更新で無くなる)。
 
 同じ日、再開は別のセッション (`--fork-session`) になるため、元のセッションに張っていた Remote Control の接続が切れ、スマートフォンから続きを見られなくなった。そこで、再開する claude を `--remote-control <名前>` つき (起動後に `/remote-control` を実行したのと同じ) で起動するようにした (`remoteControl`。既定 `true`)。名前は省略できる引数なので、後ろの指示を名前と取り違えないよう、常に名前を渡す。
+
+2026-11-15 には、再開したあと、スマートフォンの Remote Control の一覧に前のセッションも残り、どちらが続きか紛らわしかった。claude は終了時に自分のブリッジのセッションを archive する（`[bridge:shutdown] Archiving …`）が、上限で止まったウィンドウが開いたままのときや、再起動で強制終了されたときは、それが走らない。そこで、再開したときに、前のセッションの記録の `bridge-session` の行からブリッジの ID を読み、新しい方がつながってから、Claude Code と同じ API（`POST /v1/code/sessions/<cse_…>/archive`、404 なら `/v1/sessions/<session_…>/archive`）で archive するようにした（`archive-remote-session.ps1`、`archivePreviousRemoteSession`。既定 `true`）。ログイン情報は読むだけで、トークンの更新はしない（更新すると、動いている claude のトークンと食い違うおそれがある）。
 
 2026-11-13 には、バックグラウンドのサブエージェント 4 本を動かしている間に上限で止まったセッションが、スリープも解除後の再開もされなかった。上限の記録のあとに、サブエージェントが失敗したという通知が `user` の記録（`origin.kind = task-notification`）として付き、「最後の会話の記録」が上限の記録でなくなっていた。巡回は「上限のあとに利用者が入力した」とみなし、スリープの確認は「利用上限の記録が無い」とみなしていた。そこで、利用者の入力ではない `user` の記録を飛ばして最後の会話の記録を探すようにした（`auto-resume.ps1` の `Test-SyntheticUser`、`sleep-prompt.ps1` の `$isSynthetic`）。利用者が実際に入力した記録（`origin.kind = human`）は飛ばさない。あわせて、再開時の指示に「サブエージェントも止まっていれば、起動し直さず続きから」を足した。止まった時点の実物の記録の写しで、`-DryRun` の判断が「再開」になることを確かめた。
 

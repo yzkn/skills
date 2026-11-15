@@ -6,6 +6,8 @@
     分岐先の ID は auto-resume.ps1 が決めて -NewSessionId で渡す (--session-id)。
   - --remote-control <名前> で Remote Control を有効にして起動する (config.json の remoteControl。既定 true)。
     再開すると別のセッションになり、元のセッションのリモート接続は切れるため、スマートフォンから接続し直せるようにする。
+  - 元のセッションに付いていた Remote Control のセッションは、新しい方がつながってから archive する
+    (archive-remote-session.ps1 を裏で起動する。config.json の archivePreviousRemoteSession。既定 true)。
   - 再開した claude が終わるまで、PC がスリープしないようにする (PowerCreateRequest の要求と SetThreadExecutionState)
   - 動いている間は state/running/<分岐先の ID>.json を置き、claude が終われば消す。
     PC の再起動 (Windows Update など) で claude ごと終わると、この印が残る。auto-resume.ps1 は、次の起動 (ログオン時) に
@@ -120,6 +122,20 @@ if ($runningId) {
     }
     [IO.File]::WriteAllText($marker, ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
 }
+# 前のセッションに付いていた Remote Control のセッションを archive する (config.json の archivePreviousRemoteSession。既定 true)。
+# 止まったウィンドウが開いたまま・再起動で強制終了だと、claude は終了時の archive をしないので、スマートフォンの一覧に残って紛らわしい。
+# 新しいセッションの Remote Control がつながってから片付けるよう、裏で待たせる (claude の起動を待たせない)
+if ($cfg.forkSession -and $NewSessionId -and -not ($cfg.PSObject.Properties['archivePreviousRemoteSession'] -and -not $cfg.archivePreviousRemoteSession)) {
+    try {
+        $archiveArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $PSScriptRoot 'archive-remote-session.ps1')`" -SessionId $SessionId"
+        # Remote Control を付けないときは、新しい方がつながるのを待たない
+        $rcOn = (-not $cfg.PSObject.Properties['remoteControl'] -or $cfg.remoteControl)
+        if ($rcOn) { $archiveArgs += " -NewSessionId $NewSessionId" }
+        $archiveShell = if ($cfg.shellPath -and (Test-Path -LiteralPath $cfg.shellPath)) { $cfg.shellPath } else { 'powershell.exe' }
+        Start-Process -FilePath $archiveShell -WindowStyle Hidden -ArgumentList $archiveArgs | Out-Null
+    } catch { Write-Host "前の Remote Control のセッションを片付けられませんでした: $($_.Exception.Message)" -ForegroundColor DarkGray }
+}
+
 try {
     & $cfg.claudePath @claudeArgs
 }
