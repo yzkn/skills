@@ -225,6 +225,7 @@ function Get-LoopTasks {
                     status    = $(if ($sub -eq 'archive' -and -not (& $get 'status')) { 'done' } elseif (& $get 'status') { & $get 'status' } else { '?' })
                     stage     = & $get 'stage'
                     priority  = & $get 'priority'
+                    created   = & $get 'created'
                     assignee  = & $get 'assignee'
                     claimedBy = & $get 'claimed_by'
                     heartbeat = & $get 'heartbeat_at'
@@ -269,6 +270,114 @@ function Get-ProjectRepos {
         }
     }
     return $rows
+}
+
+# 起動時・スリープ解除時の自動起動（kick.ps1）の設定。config.json の kick に無い項目は既定で補う
+function Get-KickConfig {
+    param($Config)
+    $k = [ordered]@{
+        enabled              = $false   # install.ps1 -EnableKick で true
+        minIntervalHours     = 4        # 前に起こしてから、次に起こすまでの最短の時間
+        idle                 = $true    # 通常のタスクが無いとき、手が空いたときの作業のために起こすか
+        idleMinIntervalHours = 24       # 手が空いたときの作業のために起こす間隔
+        busyMinutes          = 15       # この分の内に記録が書かれたセッションがあれば、起こさない（0 なら見ない）
+        idleCloseMinutes     = 60       # 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（0 なら終わらせない）
+        permissionMode       = 'auto'   # 起こすセッションの権限モード
+        remoteControl        = $true    # --remote-control つきで起こす
+        prompt               = ''       # 最初に送る指示。空なら既定（/auto-loop next）
+    }
+    if ($Config.PSObject.Properties.Name -contains 'kick' -and $Config.kick) {
+        foreach ($p in $Config.kick.PSObject.Properties) { if ($k.Contains($p.Name) -and $null -ne $p.Value) { $k[$p.Name] = $p.Value } }
+    }
+    return [pscustomobject]$k
+}
+
+# 優先度の順（小さいほど先）。urgent は利用者が指定したときだけ使う。書いていない・知らない値は normal と同じ
+function Get-PriorityRank {
+    param([string]$Priority)
+    switch ($Priority) { 'urgent' { return 0 } 'high' { return 1 } 'low' { return 3 } default { return 2 } }
+}
+
+# assignee が自分に合うか（any・自分の ID・自分の道具の名前）
+function Test-LoopAssignee {
+    param([string]$Me, [string]$Assignee)
+    if (-not $Assignee -or $Assignee -eq 'any') { return $true }
+    return ($Me -eq $Assignee) -or (($Me -split '-') -contains $Assignee)
+}
+
+# 受付（inbox.md）の未整理の件: 目印の行より下の「## 」見出し。Urgent は、そのうち「優先: 緊急」と書かれた件数
+function Get-InboxSummary {
+    param($Config)
+    $count = 0; $urgent = 0
+    $file = Join-Path $Config.controlRepoPath 'inbox.md'
+    if (Test-Path -LiteralPath $file) {
+        $after = $false
+        foreach ($l in (Read-LoopText $file) -split '\r?\n') {
+            if ($l -match '<!--\s*ここから下に追記') { $after = $true; continue }
+            if (-not $after) { continue }
+            if ($l -match '^##\s+\S') { $count++ }
+            elseif ($l -match '^優先[:：]\s*(緊急|urgent)') { $urgent++ }
+        }
+    }
+    return [pscustomobject]@{ Count = $count; Urgent = $urgent }
+}
+
+# 「間隔:」の書き方を日数にする（毎回 = 0、省略・読めないときは 7）
+function ConvertTo-IntervalDays {
+    param([string]$Text)
+    $t = ($Text -replace '\s', '')
+    if (-not $t) { return 7 }
+    if ($t -match '毎回') { return 0 }
+    if ($t -match '毎日') { return 1 }
+    if ($t -match '毎週') { return 7 }
+    if ($t -match '毎月') { return 30 }
+    if ($t -match '^(\d+)日') { return [int]$Matches[1] }
+    if ($t -match '日(\d+)回') { return 1 }
+    if ($t -match '週(\d+)回') { return [math]::Max(1, [int][math]::Floor(7 / [math]::Max(1, [int]$Matches[1]))) }
+    if ($t -match '月(\d+)回') { return [math]::Max(1, [int][math]::Floor(30 / [math]::Max(1, [int]$Matches[1]))) }
+    return 7
+}
+
+# inbox.md の「## 手が空いた時に実行するタスク」の定義（### <案件>: <件名>）を読む。
+# コードの囲み（```）の中と、見出しが「（停止）」で始まるものは読まない。due = 間隔の内に実施していない
+function Get-IdleDefinitions {
+    param($Config)
+    $defs = @()
+    $file = Join-Path $Config.controlRepoPath 'inbox.md'
+    if (-not (Test-Path -LiteralPath $file)) { return $defs }
+    $in = $false; $fence = $false; $cur = $null
+    foreach ($l in (Read-LoopText $file) -split '\r?\n') {
+        if ($l -match '^\s*```') { $fence = -not $fence; continue }
+        if ($fence) { continue }
+        if ($l -match '^##\s+手が空いた時に実行するタスク') { $in = $true; continue }
+        if (-not $in) { continue }
+        if ($l -match '^##\s' -or $l -match '<!--\s*ここから下に追記') { break }
+        if ($l -match '^###\s+(.+?)\s*$') {
+            if ($cur) { $defs += $cur }
+            $cur = $null
+            $head = $Matches[1]
+            if ($head -match '^[（(]停止[）)]') { continue }
+            $project = ''; $title = $head
+            if ($head -match '^([^:：]+)[:：]\s*(.+)$') { $project = $Matches[1].Trim(); $title = $Matches[2].Trim() }
+            $cur = [pscustomobject]@{ project = $project; title = $title; stage = 'propose'; interval = ''; intervalDays = 7; last = ''; due = $true }
+            continue
+        }
+        if (-not $cur) { continue }
+        if ($l -match '^段階[:：]\s*(.*)$') { $cur.stage = $(if ($Matches[1] -match '実装|implement') { 'implement' } else { 'propose' }) }
+        elseif ($l -match '^間隔[:：]\s*(.*)$') { $cur.interval = $Matches[1].Trim(); $cur.intervalDays = ConvertTo-IntervalDays $Matches[1] }
+        elseif ($l -match '^最終実施[:：]\s*(.*)$') { $cur.last = $Matches[1].Trim() }
+    }
+    if ($cur) { $defs += $cur }
+    foreach ($d in $defs) {
+        if ($d.last -match '(\d{4})-(\d{2})-(\d{2})') {
+            try {
+                $date = [datetime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+                $d.due = (((Get-Date).Date - $date).TotalDays -ge $d.intervalDays)
+            }
+            catch { $d.due = $true }
+        }
+    }
+    return $defs
 }
 
 Export-ModuleMember -Function *

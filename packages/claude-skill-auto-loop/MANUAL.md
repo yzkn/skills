@@ -17,13 +17,15 @@
 |---|---|
 | `skills/auto-loop/SKILL.md` | スキル本体。サブコマンドに応じて `references/` の該当ファイルだけを読む |
 | `skills/auto-loop/references/*.md` | サブコマンドごとの手順 |
-| `skills/auto-loop/scripts/install.ps1` | 導入（スキルの写し、`~/.claude/auto-loop/` の設定とフォルダ）。何度実行しても安全。`-LinkAutoResume` で `auto-resume-global` と連携 |
+| `skills/auto-loop/scripts/install.ps1` | 導入（スキルの写し、`~/.claude/auto-loop/` の設定とフォルダ）。何度実行しても安全。`-LinkAutoResume` で `auto-resume-global` と連携。`-EnableKick` / `-DisableKick` で、起動時・スリープ解除時の自動起動（タスク `AutoLoopKick`）を登録・削除 |
 | `skills/auto-loop/scripts/new-control-repo.ps1` | 指令リポジトリをひな形から手元に作る（`git init` と最初のコミットまで） |
 | `skills/auto-loop/scripts/preflight.ps1` | 着手前の確認。1 行 1 項目で `OK / INFO / WARN / NG`。NG があれば終了コード 1 |
-| `skills/auto-loop/scripts/status.ps1` | 全案件の状態の要約（`-Json` あり） |
-| `skills/auto-loop/scripts/new-task.ps1` | タスクファイルの作成（ID は `<日付>-<名前>`） |
+| `skills/auto-loop/scripts/status.ps1` | 全案件の状態の要約（`-Json` あり）。状態ごとに、優先度の高い順・古い順 |
+| `skills/auto-loop/scripts/new-task.ps1` | タスクファイルの作成（ID は `<日付>-<名前>`）。`-Priority urgent`（利用者が緊急と指定したとき）、`-Source idle`（手が空いたときの作業） |
 | `skills/auto-loop/scripts/claim.ps1` | 担当の主張・印・解放・引き継ぎ（`claim` / `heartbeat` / `release` / `takeover`）。終了コード 2 = 担当できない |
 | `skills/auto-loop/scripts/sync.ps1` | 指令リポジトリの同期（コミット → `pull --rebase` → push）。競合したら取り消して報告する |
+| `skills/auto-loop/scripts/kick.ps1` | 起動時（ログオン時）・スリープ解除時に、やることがあるかを git とファイルだけで判断し、あるときだけ新しいウィンドウでセッションを起こす（`-EnableKick` で有効にしたときだけ。Windows 専用。`auto-resume-global` が要る）。`-DryRun` で判断だけを表示。見送った理由はログに残る |
+| `skills/auto-loop/scripts/kick-session.ps1` | `kick.ps1` が起こしたウィンドウの中で `claude` を起動し、`/auto-loop next` を実行させる。記録が書かれなくなったら終わらせる |
 | `skills/auto-loop/scripts/lib/AutoLoop.psm1` | 共通の関数 |
 | `skills/auto-loop/assets/control-repo/` | 指令リポジトリのひな形 |
 
@@ -42,7 +44,7 @@
 
 ### 3-1. 呼び出し方
 
-`/auto-loop <setup|status|intake|start|preflight|checkpoint|resume|delegate|finish>`。引数が無いときは `status`。
+`/auto-loop <setup|status|intake|start|next|preflight|checkpoint|resume|delegate|finish>`。引数が無いときは `status`。
 
 ## 4. 内容の構成
 
@@ -53,6 +55,7 @@
   → 作業       区切りごとに checkpoint。必要なら delegate。判断待ちは status: waiting
   → （中断）   上限・再起動・分岐 → resume
   → finish     報告 → 解放（done → archive/）→ 片付け
+  → next       次にやることを決める（起動時・スリープ解除時に自動で起こされたときも、ここから）
 ```
 
 | `status` | 意味 |
@@ -100,6 +103,7 @@
 1. 2026-11-13〜14 に、あるリポジトリでの長時間の作業（MR 8 本、サブエージェント 4 本の並列）が、利用上限による停止と自動再開を 4 回挟んだ。状態が会話の中にしかない、着手前の確認が遅い、分岐後にサブエージェントを呼び戻せない、などの教訓を得た
 2. 以前に試作した、`claude -p` を回すループのキットから、技術スタックに依存しない部分（状態の要約、事前の道具・認証の確認、回避せずに報告する方針）を取り入れた
 3. 2026-11-15 に作成し、通し試験と、実際の GitHub / GitLab の案件での `preflight.ps1` で確かめた
+4. 2026-11-15 に、着手の順（着手のたびの優先度の判定・緊急・PC 1 台 1 リポジトリ・手が空いたときの作業）と、起動時・スリープ解除時の自動起動（`kick.ps1`）を足した。自動起動は、通し試験（判断だけ）と、一時の指令リポジトリでの 1 回の起動で確かめた。実際のログオン・スリープ復帰をまたぐ一連は確かめていない
 
 ## 8. 公開前チェック
 

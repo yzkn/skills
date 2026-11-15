@@ -1,6 +1,6 @@
 ---
 name: auto-loop
-description: "ループエンジニアリング（長時間・複数案件の作業を、指令リポジトリの Markdown で状態管理しながら進める）の手順。依頼の起票、着手前の確認（認証・push 先・本流のリモート）、担当の主張、区切りごとの状態の記録、上限・再起動のあとの再開、サブエージェントへの委任、完了の報告までを扱う。複数の PC・複数のエージェント（Claude と Copilot など）・複数の GitHub / GitLab アカウントをまたぐ。「ループの状態を見せて」「受付を整理して」「この依頼を起票して」「次のタスクに着手して」「着手前の確認をして」「状態を記録して」「中断したところから再開して」「Opus に並列で任せて」「タスクを完了にして」で自動適用。複数ステップに及ぶ作業を直接頼まれたときも、着手の前に起票する。/auto-loop <setup|status|intake|start|preflight|checkpoint|resume|delegate|finish>。上限の解除時刻に PC を起こしてセッションを再開するのは auto-resume-global。"
+description: "ループエンジニアリング（長時間・複数案件の作業を、指令リポジトリの Markdown で状態管理しながら進める）の手順。依頼の起票、着手前の確認（認証・push 先・本流のリモート）、担当の主張、区切りごとの状態の記録、上限・再起動のあとの再開、サブエージェントへの委任、完了の報告までを扱う。複数の PC・複数のエージェント（Claude と Copilot など）・複数の GitHub / GitLab アカウントをまたぐ。「ループの状態を見せて」「受付を整理して」「この依頼を起票して」「次のタスクに着手して」「次にやることを決めて」「着手前の確認をして」「状態を記録して」「中断したところから再開して」「Opus に並列で任せて」「タスクを完了にして」で自動適用。複数ステップに及ぶ作業を直接頼まれたときも、着手の前に起票する。/auto-loop <setup|status|intake|start|next|preflight|checkpoint|resume|delegate|finish>。上限の解除時刻に PC を起こしてセッションを再開するのは auto-resume-global。"
 ---
 
 # /auto-loop — ループエンジニアリングの手順
@@ -30,6 +30,7 @@ description: "ループエンジニアリング（長時間・複数案件の作
 | `status` | 全案件の状態の要約 | [references/status.md](references/status.md) |
 | `intake` | 起票（受付の整理、直接の依頼の反映） | [references/intake.md](references/intake.md) |
 | `start [タスク ID]` | 担当の主張 → 着手前の確認 → 計画 | [references/start.md](references/start.md) |
+| `next` | 次にやることを決める（再開・優先度の再判定・着手・手が空いたときの作業のどれか 1 つ） | [references/next.md](references/next.md) |
 | `preflight [案件]` | 着手前の確認だけ | [references/preflight.md](references/preflight.md) |
 | `checkpoint` | 状態の記録（区切りごと） | [references/checkpoint.md](references/checkpoint.md) |
 | `resume` | 中断からの再開 | [references/resume.md](references/resume.md) |
@@ -47,6 +48,7 @@ description: "ループエンジニアリング（長時間・複数案件の作
   → 作業       区切りごとに checkpoint。必要なら delegate。判断待ちは status: waiting
   → （中断）   上限・再起動・分岐 → resume（状態ファイル・作業ツリー・前提を確かめ直す）
   → finish     報告 → 解放（done → archive/）→ 作業ツリーの片付け
+  → next       次にやることを決める（起動時・スリープ解除時に自動で起こされたときも、ここから）
 ```
 
 ## 遵守事項（どのサブコマンドでも）
@@ -61,10 +63,12 @@ description: "ループエンジニアリング（長時間・複数案件の作
 8. **確かめた事実と推測を分ける。** 報告は「結論 → 成果物 → 確かめたこと / 確かめられていないこと → 利用者の判断が要ること」の順（指令リポジトリの `templates/report.md`）
 9. **止まったら、理由を残す。** 認証切れなどで進めないときは、`status: blocked` と理由を記録し、直し方のコマンドを完全な形で示す（例 `! glab auth login --hostname gitlab.com --web`。`!` で実行するコマンドは非対話なので、`--web` などを省かない）
 10. 指令リポジトリに、認証情報・個人情報・コード・大きなファイルを置かない
+11. **着手のたびに優先度を判定しなおし、高いものから行う。** 担当中のタスクは続けるのが原則で、`priority: urgent`（利用者が指定したときだけ）は先に行う。同じ PC では、同時には 1 つのリポジトリのタスクだけを進める。通常のタスクが無いときの軽い作業は 1 回に 1 件・委任なし（指令リポジトリの `AGENTS.md`「7. 着手の順」、[references/next.md](references/next.md)）
 
 ## 制約・未検証
 
 - スクリプトは PowerShell 7（`pwsh`）で動く。Windows で作成・検証している（macOS / Linux の `pwsh` では未検証）
 - 利用枠の残りは機械的に取れない。並列の委任の前に、利用者に確かめる
+- 起動時・スリープ解除時の自動起動（`kick.ps1`）は Windows 専用で、`auto-resume-global` が導入済みのときだけ動く。実際のログオン・スリープ復帰をまたぐ一連は、実地での確認が要る
 - 担当の主張は git の push の先着で決める。指令リポジトリにリモートが無い構成では、同じ PC の中でしか効かない
 - Claude Code 以外のエージェントは、スクリプトを使わずに `AGENTS.md` の手順を git で行う（その場合の取り違えは、スクリプトほどは防げない）
