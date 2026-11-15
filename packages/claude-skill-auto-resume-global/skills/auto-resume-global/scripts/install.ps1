@@ -68,7 +68,7 @@ if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallD
 $src = (Resolve-Path $PSScriptRoot).Path
 $dst = (Resolve-Path $InstallDir).Path
 if ($src -ne $dst) {
-    foreach ($f in @('auto-resume.ps1', 'resume-session.ps1', 'keep-awake.ps1', 'sleep-on-limit.ps1', 'sleep-prompt.ps1', 'run-hidden.vbs', 'install.ps1', 'uninstall.ps1')) {
+    foreach ($f in @('auto-resume.ps1', 'resume-session.ps1', 'archive-remote-session.ps1', 'keep-awake.ps1', 'sleep-on-limit.ps1', 'sleep-prompt.ps1', 'run-hidden.vbs', 'install.ps1', 'uninstall.ps1')) {
         Copy-Item -LiteralPath (Join-Path $src $f) -Destination (Join-Path $dst $f) -Force
     }
     Write-Host "スクリプトをコピーしました: $dst"
@@ -101,6 +101,7 @@ $defaults = [ordered]@{
     forkSession            = $true             # 新しいセッション ID に分けて再開する (止まったときのウィンドウと二重に書き込まない)
     remoteControl          = $true             # 再開した claude を Remote Control つきで起動する (--remote-control。スマートフォンから接続し直せる)
     remoteControlName      = ''                # Remote Control のセッション名。空なら「<フォルダー名> (上限後の再開 MM/dd HH:mm)」
+    archivePreviousRemoteSession = $true       # 再開したら、前のセッションの Remote Control のセッションを archive する (一覧に残って紛らわしくないように)
     marginMinutes          = 3                # 解除時刻からこの分だけ待ってから再開する
     fallbackWaitMinutes    = 60                # 記録に解除時刻が無いときの待ち時間
     maxAgeHours            = 192               # これより前に止まったセッションは再開しない (週の上限 7 日 + 余裕)
