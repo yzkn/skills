@@ -21,12 +21,30 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
 
    スキルを `~/.claude/skills/auto-loop/` に写し（そこから実行しているときは写さない）、`~/.claude/auto-loop/` に設定とフォルダを作る
 5. **名簿に足す。** `roster.md` に自分の行を足し、`sync.ps1 -Message 'setup: <ID> を登録'` で送る
-6. **自動再開と連携する（任意。利用者の了承を得てから）。** `auto-resume-global` が入っていれば、再開の指示に「`/auto-loop resume` を実行する」案内を足す。グローバルの設定を書き換えるので、変更の内容を示して了承を得る（控えは `~/.claude/auto-loop/state/` に残る）
+6. **自動再開と連携する（任意。利用者の了承を得てから）。** `auto-resume-global` が入っていれば、再開の指示に「`/auto-loop resume` を実行する（担当中のタスクが無ければ `/auto-loop next`）」案内を足す（前の版の案内が入っていれば、置き換える）。グローバルの設定を書き換えるので、変更の内容を示して了承を得る（控えは `~/.claude/auto-loop/state/` に残る）
 
    ```
    pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -LinkAutoResume
    ```
-7. **確かめる。** `pwsh -NoProfile -File <scripts>/preflight.ps1` を実行し、NG があれば直し方を示す
+7. **起動時・スリープ解除時の自動起動を有効にする（任意。利用者の了承を得てから。Windows 専用）。** 上限で止まったセッションが無くても、ログオン時・スリープ復帰時に、やることがあれば新しいウィンドウでセッションを起こし、`/auto-loop next` を実行させる。タスクスケジューラにタスク `AutoLoopKick` を登録するので、何が起きるか（下の表）を示して了承を得る。`auto-resume-global` が導入済みのときだけ動く
+
+   ```
+   pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -EnableKick     # 止めるときは -DisableKick
+   pwsh -NoProfile -File <scripts>/kick.ps1 -DryRun                    # 判断だけを見る（起こさない）
+   ```
+
+   | `config.json` の `kick` | 既定 | 意味 |
+   |---|---|---|
+   | `enabled` | `false` | `-EnableKick` で `true` |
+   | `minIntervalHours` | `4` | 前に起こしてから、次に起こすまでの最短の時間 |
+   | `idle` / `idleMinIntervalHours` | `true` / `24` | 通常のタスクが無いとき、手が空いたときの作業のために起こすか・その間隔 |
+   | `busyMinutes` | `15` | この分の内に記録が書かれたセッションがあれば、起こさない（共倒れを防ぐ） |
+   | `idleCloseMinutes` | `60` | 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（`0` なら終わらせない。その間 PC は眠らず、次も起こせない） |
+   | `permissionMode` / `remoteControl` | `auto` / `true` | 起こすセッションの権限モード・Remote Control |
+   | `prompt` | 空 | 最初に送る指示（空なら既定の「`/auto-loop next` を実行」） |
+
+   起こさなかった理由は `~/.claude/auto-loop/logs/auto-loop.log` の `[kick]` の行に残る
+8. **確かめる。** `pwsh -NoProfile -File <scripts>/preflight.ps1` を実行し、NG があれば直し方を示す
 
 ## 案件を足すとき
 
@@ -42,4 +60,4 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
 ## してはいけないこと
 
 - リモートのリポジトリの作成・公開範囲の変更を、利用者の指示なしに行わない
-- 利用者のグローバルの設定（`~/.claude/CLAUDE.md`・`settings.json`・`auto-resume-global` の設定）を、了承なしに書き換えない
+- 利用者のグローバルの設定（`~/.claude/CLAUDE.md`・`settings.json`・`auto-resume-global` の設定）を、了承なしに書き換えない。タスクスケジューラへの登録（`-EnableKick`）も同じ

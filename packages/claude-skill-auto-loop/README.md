@@ -60,19 +60,20 @@ pwsh -NoProfile -File $HOME/.claude/skills/auto-loop/scripts/preflight.ps1
 | `status` | 全案件の状態の要約（人の対応が要るものを先に） |
 | `intake` | 起票（受付の整理、直接の依頼の反映） |
 | `start [タスク ID]` | 担当の主張 → 着手前の確認 → 計画・承認が要る操作の洗い出し |
+| `next` | 次にやることを決める（再開・優先度の再判定・着手・手が空いたときの作業のどれか 1 つ） |
 | `preflight [案件]` | 着手前の確認だけ |
 | `checkpoint` | 状態の記録（区切りごと） |
 | `resume` | 中断からの再開（状態ファイル・作業ツリー・前提を確かめ直す。止まった委任の仕上げ） |
 | `delegate` | サブエージェントへの委任（指示書の型・作業ツリー・禁止事項） |
 | `finish` | 完了の報告・解放・片付け |
 
-人は、指令リポジトリの `inbox.md` に `## <案件>: <件名>` を足すだけで依頼できる（GitHub の画面・スマートフォンからでも）。判断待ち（`status: waiting`）のタスクには、タスクファイルに直接答えを書ける。
+人は、指令リポジトリの `inbox.md` に `## <案件>: <件名>` を足すだけで依頼できる（GitHub の画面・スマートフォンからでも）。`優先: 緊急` と書いた依頼は、作業中のタスクを中断して先に行う。着手できる依頼が無いときにしてほしい軽い作業は、`inbox.md` の「手が空いた時に実行するタスク」に書いておける。判断待ち（`status: waiting`）のタスクには、タスクファイルに直接答えを書ける。
 
 ## 収録ファイル
 
 - `skills/auto-loop/SKILL.md`
-- `skills/auto-loop/references/`（`setup.md`・`status.md`・`intake.md`・`start.md`・`preflight.md`・`checkpoint.md`・`resume.md`・`delegate.md`・`finish.md`）
-- `skills/auto-loop/scripts/`（`install.ps1`・`new-control-repo.ps1`・`preflight.ps1`・`status.ps1`・`new-task.ps1`・`claim.ps1`・`sync.ps1`・`lib/AutoLoop.psm1`）
+- `skills/auto-loop/references/`（`setup.md`・`status.md`・`intake.md`・`start.md`・`next.md`・`preflight.md`・`checkpoint.md`・`resume.md`・`delegate.md`・`finish.md`）
+- `skills/auto-loop/scripts/`（`install.ps1`・`new-control-repo.ps1`・`preflight.ps1`・`status.ps1`・`new-task.ps1`・`claim.ps1`・`sync.ps1`・`kick.ps1`・`kick-session.ps1`・`lib/AutoLoop.psm1`）
 - `skills/auto-loop/assets/control-repo/`（指令リポジトリのひな形）
 
 ## 単体利用時の注意

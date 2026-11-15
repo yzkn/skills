@@ -13,8 +13,8 @@ param(
     [Parameter(Mandatory)][string]$Title,
     [string]$Slug = '',
     [ValidateSet('propose', 'implement', 'merge')][string]$Stage = 'propose',
-    [ValidateSet('low', 'normal', 'high')][string]$Priority = 'normal',
-    [ValidateSet('inbox', 'direct', 'file')][string]$Source = 'direct',
+    [ValidateSet('low', 'normal', 'high', 'urgent')][string]$Priority = 'normal',   # urgent は利用者が指定したときだけ
+    [ValidateSet('inbox', 'direct', 'file', 'idle')][string]$Source = 'direct',     # idle = 手が空いたときの作業
     [string]$Assignee = 'any',
     [string]$Request = '',
     [string]$RequestFile = ''
@@ -52,6 +52,6 @@ foreach ($k in $map.Keys) { $text = $text.Replace($k, [string]$map[$k]) }
 New-Item -ItemType Directory -Force (Join-Path $projDir 'tasks') | Out-Null
 $path = Join-Path $projDir "tasks/$id.md"
 Write-LoopText $path $text
-Write-LoopLog 'new-task' "$Project/$id ($Stage, $Source)"
+Write-LoopLog 'new-task' "$Project/$id ($Stage, $Source, $Priority)"
 Write-Output "OK $id"
 Write-Output $path
