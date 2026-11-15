@@ -139,6 +139,16 @@ try {
     $keepAwakeUntil = $null
     $launched = 0
     $deferredAny = $false   # 保留・待って調べ直したものがあった (終わりのログを書く)
+    # 前の巡回で再開を待っていたセッション (state/waiting.json。セッション ID → 再開の予定時刻)。
+    # 今回、再開もせず待ちもしなくなったものは、理由をログに書く (黙って復帰タスクを消すと、動いたのか分からない)
+    $WaitingFile = Join-Path $StateDir 'waiting.json'
+    $prevWaiting = @{}
+    if (Test-Path $WaitingFile) {
+        try { (Get-Content $WaitingFile -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $prevWaiting[$_.Name] = [string]$_.Value } } catch { }
+    }
+    $waiting = @{}       # 今回待つもの
+    $launchedIds = @{}   # 今回再開したもの
+    $notLimited = @{}    # 最後の会話が上限の記録ではなくなったもの (セッション ID → その記録の時刻)
 
     # 利用者の入力ではない user の記録か (Claude Code が自分で差し込むもの)。
     # 例: バックグラウンドのサブエージェントが終わった・失敗したときの通知 (<task-notification>。origin.kind = task-notification)、
@@ -347,6 +357,8 @@ try {
         $recheckAt = $null
         $limitCount = 0
         $waitCount = 0
+        $waiting = @{}
+        $notLimited = @{}
         $files = Get-ChildItem -Path $ProjectsDir -Directory -ErrorAction SilentlyContinue |
             ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Filter '*.jsonl' -File } |
             Where-Object { $_.LastWriteTime -ge $maxAge }
@@ -354,7 +366,12 @@ try {
         foreach ($f in $files) {
             # 上限の記録のあとにサブエージェントの通知が付いていても、利用者の入力とはみなさない
             $last = Get-LastTurn $f.FullName -SkipSynthetic
-            if (-not (Test-LimitRecord $last)) { continue }
+            if (-not (Test-LimitRecord $last)) {
+                if ($last -and $last.PSObject.Properties['sessionId'] -and $prevWaiting.ContainsKey([string]$last.sessionId)) {
+                    $notLimited[[string]$last.sessionId] = if ($last.PSObject.Properties['timestamp']) { ([datetime]$last.timestamp).ToLocalTime().ToString('MM/dd HH:mm:ss') } else { '?' }
+                }
+                continue
+            }
             if ($last.PSObject.Properties['entrypoint'] -and $last.entrypoint -ne 'cli') { continue }   # 対話セッションだけ (claude -p などは対象外)
             $limitCount++
 
@@ -382,6 +399,7 @@ try {
 
             if ($now -lt $due) {
                 $waitCount++
+                $waiting[$sid] = $due.ToString('o')
                 if ($DryRun) { Write-Log ("待機 {0} ({1}) {2} の上限 → {3} に再開予定 [{4}]" -f $sid, $title, $kind, $due.ToString('MM/dd HH:mm'), $cwd) }
                 if (($due - $now).TotalSeconds -le 90) {
                     # すぐに再開の時刻になる: タスクを登録せず、このまま待つ
@@ -397,6 +415,7 @@ try {
             if ($age -lt 60) {
                 Write-Log ("保留 {0} : 上限の記録が新しい ({1} 秒前)" -f $sid, [math]::Floor([math]::Max(0, $age)))
                 $waitCount++
+                $waiting[$sid] = $due.ToString('o')
                 $at = $recordAt.AddSeconds(60)
                 if (-not $recheckAt -or $at -lt $recheckAt) { $recheckAt = $at }
                 continue
@@ -427,6 +446,7 @@ try {
             $handled[$key] = [ordered]@{ resumedAt = (Get-Date).ToString('o'); cwd = $cwd; kind = $kind; mode = $mode; forkedTo = $newId }
             Save-Handled
             $launched++
+            $launchedIds[$sid] = $true
             Wait-ResumeMarker $(if ($cfg.forkSession) { $newId } else { $sid })
         }
 
@@ -455,8 +475,22 @@ try {
         }
     }
 
+    # 前の巡回で待っていたのに、今回は再開も待ちもしなかったセッション: 理由を書く
+    # (例: 解除の前に利用者が手で入力して再開した。そのとき復帰タスクは黙って消える)
+    $dropped = 0
+    foreach ($id in @($prevWaiting.Keys)) {
+        if ($waiting.ContainsKey($id) -or $launchedIds.ContainsKey($id)) { continue }
+        $dueText = try { ([datetime]$prevWaiting[$id]).ToString('MM/dd HH:mm') } catch { '?' }
+        $why = if ($notLimited.ContainsKey($id)) { "上限の記録のあとに会話が続いている (最後の記録 $($notLimited[$id])。手で再開したなど)" } else { '上限で止まったセッションとして見つからない (処理済み・対象外・記録が古いなど)' }
+        Write-Log ("再開しない {0} : {1} に再開する予定だったが、{2}" -f $id, $dueText, $why)
+        $dropped++
+    }
     if (-not $DryRun) {
         Save-Handled
+        try {
+            if ($waiting.Count -gt 0) { [IO.File]::WriteAllText($WaitingFile, ($waiting | ConvertTo-Json), (New-Object Text.UTF8Encoding $false)) }
+            elseif (Test-Path $WaitingFile) { Remove-Item -LiteralPath $WaitingFile -Force }
+        } catch { Write-Log "waiting.json を書けない: $($_.Exception.Message)" }
 
         # 次の解除時刻にスリープから復帰して起動する 1 回きりのタスク
         # (VBScript は Windows から外されていくので、conhost.exe --headless でウィンドウを出さずに起動する)
@@ -482,7 +516,7 @@ try {
 
     # 終わりのログ: debugLog のときは毎回。それ以外も、何か起動した・保留した・10 秒より長くかかったときは書く
     $elapsed = ((Get-Date) - $runStart).TotalSeconds
-    if ($debugLog -or $launched -gt 0 -or $deferredAny -or $elapsed -gt 10) {
+    if ($debugLog -or $launched -gt 0 -or $deferredAny -or $dropped -gt 0 -or $elapsed -gt 10) {
         Write-Log ("終了 (上限で停止 {0}、再開 {1}、待機 {2}、所要 {3} 秒)" -f $limitCount, $launched, $waitCount, [math]::Round($elapsed, 1))
     }
 }
