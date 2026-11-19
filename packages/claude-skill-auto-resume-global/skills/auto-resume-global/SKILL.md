@@ -182,6 +182,17 @@ auto-resume.ps1（ログオン時など）
 4. Claude Code の版が変わって検出できなくなったら、実物の上限の記録を確かめ、上限の判定（`Test-LimitRecord`。`auto-resume.ps1` と `sleep-prompt.ps1` で同じものにしておく）と `resetsAt` の読み取りだけを直す
 5. 復帰したのに再開されなかったと言われたら、`logs/auto-resume.log` の「保留」「skip」「警告」「終了」の行を見る。行が無ければ `debugLog` を `true` にして次の巡回を待つ（試験は `-DryRun`、または写しのフォルダで `-NoTask -ProjectsDir -StateDir` を付けて行い、インストール先の `state` を使わない）
 
+## auto-loop との関係
+
+このスキルは単体で使える。`auto-loop` スキル（指令リポジトリで作業の状態を持つ。同じキット [aiyzkn/auto-loop-engineering](https://github.com/aiyzkn/auto-loop-engineering) が正本）を入れていると、`auto-loop` が次のものを読む（一部は書く）。**これらの名前・意味を変えるときは、`auto-loop` の側も同じ PR で直す。**
+
+- インストール先（既定 `~/.claude/auto-resume-global/`）の `config.json` があること・`disabled` があること
+- `config.json` の `claudePath`・`shellPath`・`terminalPath`（読む）と、`resumePrompt`・`rebootResumePrompt`（`auto-loop` の `install.ps1 -LinkAutoResume` が、利用者の了承のうえで末尾に案内を足す）
+- タスク `ClaudeAutoResumeGlobal-Wake` の次の実行時刻（上限の解除待ちかの判断）
+- 解除時刻の 3 分後（`marginMinutes` の既定）・ログオン / 復帰の 1 分後に再開する、という時刻（`auto-loop` の自動起動は、その後に動く）
+
+詳しくはキットの `docs/design.md`「1.1 2 つのスキルの関係」。
+
 ## 遵守事項
 
 - 【要指示】**`install` と `-EnableWakeTimers` は、利用者の明示的な指示がある場合のみ行う。** タスクの登録と電源設定の変更は、利用者の PC 全体に効く
