@@ -99,7 +99,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
    | 上限の記録の `timestamp` が 20 秒前（`resetsAt` は過ぎている） | 1 回目に「保留 … 上限の記録が新しい (n 秒前)」、約 40 秒後の 2 回目に「再開」。代役の claude は 1 回だけ起動し、`handled.json` に書かれ、`state/running/<分岐先の ID>.json` が現れる |
    | 同じ写しで 2 つ同時に起動 | 後のほうは Mutex を待ってから動き、処理済みとして何もせずに「終了」を書く（黙って終わらない） |
    | `apiError = model_requires_usage_credits` の記録 | `auto-resume.ps1 -DryRun` が解除時刻 + 3 分まで「待機」。`sleep-prompt.ps1 -DryRun -SimulateClick cancel` が上限の記録を見つける |
-   | 解除まで `sleepMaxHours` より長い記録 | `sleep-prompt.ps1 -DryRun -Seconds 3` が「スリープしない: 解除まで n 時間 (sleepMaxHours m 時間を超える)」 |
+   | 解除まで `sleepMaxHours` より長い記録（5 時間の上限、または復帰タスクが無い週の上限） | `sleep-prompt.ps1 -DryRun -Seconds 3` が「スリープしない: 解除まで n 時間 (sleepMaxHours m 時間を超える)」 |
+   | 週の上限（`seven_day`）で解除まで 2 日など、復帰タスクがある記録 | `sleep-prompt.ps1 -DryRun -Seconds 3` が「スリープする (timeout: seven_day、…)」。解除まで `sleepMaxHoursWeekly` より長ければ「スリープしない: … (sleepMaxHoursWeekly …)」 |
 8. 認証の確かめ方を見る。`sleep-prompt.ps1 -CheckAuthOnly` が「認証は有効です」か、切れているものの注意を出すこと
 
 ## 6. 既知の制約
@@ -160,6 +161,8 @@ pwsh -File ~/.claude/skills/auto-resume-global/scripts/install.ps1 -EnableWakeTi
 - タスクは `conhost.exe --headless` で起動する（VBScript を使わない）
 - 解除まで `sleepMaxHours`（既定 12 時間）より長ければ、確認の時間切れでスリープしない
 - スリープの前に `gh` / `glab` の認証を確かめ、切れていれば確認の画面に出す（`-CheckAuthOnly` で単独でも確かめられる）
+
+2026-11-17 05:14 には、週の上限（`seven_day`、解除 11/19 08:00）で止まったが、解除まで 50.8 時間で `sleepMaxHours` を超えたため、確認の時間切れでもスリープしなかった（復帰タスク 11/19 08:03 は登録できていた）。利用者は、人がいないときは週の上限でもスリープさせたい。復帰タスクは解除時刻の絶対時刻で登録されるので、眠っている長さによらず解除時刻に起きる。そこで、週の上限で復帰タスクがあるときは、別の上限 `sleepMaxHoursWeekly`（既定 192 時間）で判断するようにした。人が PC の前にいるなら、確認の画面でキャンセルできる（11/14 に問題とみなした「5 日後の解除でもスリープした」動作を、週の上限で復帰タスクがある場合に限って戻したことになる）。
 
 2026-11-14 には、インストール先のフォルダ（`~/.claude/auto-resume`）とタスク名（`ClaudeAutoResume`）を、スキル名に合わせて `~/.claude/auto-resume-global` と `ClaudeAutoResumeGlobal` に改めた。同じリポジトリにプロジェクト単位の別のスキル `auto-resume` があり、人が見たときに区別しにくかったためである。Mutex と型の名前もそろえた。前の版からは `install.ps1` を実行し直すだけで移行できる。
 

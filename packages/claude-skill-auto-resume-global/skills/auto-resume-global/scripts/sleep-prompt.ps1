@@ -8,7 +8,8 @@
   3. auto-resume.ps1 を実行して、解除時刻 + 余裕 に復帰するタスク ClaudeAutoResumeGlobal-Wake を登録する
   4. 確認の画面を出す。「今すぐスリープ」か、応答が無いまま時間が過ぎたらスリープする。「キャンセル」で何もしない
      (復帰タスクが無い・スリープ解除タイマーが無効・バッテリ駆動中・gh / glab の認証が切れているなら、画面にその旨を出す)
-     解除まで sleepMaxHours (既定 12 時間) より長ければ、時間が過ぎてもスリープしない (「今すぐスリープ」ならスリープする)
+     解除まで sleepMaxHours (既定 12 時間) より長ければ、時間が過ぎてもスリープしない (「今すぐスリープ」ならスリープする)。
+     ただし週の上限 (seven_day で始まる種類) で、復帰タスクがあるときは sleepMaxHoursWeekly (既定 192 時間) を使う
   同時に 1 つだけ (複数のセッションが同時に上限に当たっても、確認は 1 つ)。
 .PARAMETER TranscriptPath
   セッション記録 (~/.claude/projects/<プロジェクト>/<セッション ID>.jsonl)
@@ -90,6 +91,8 @@ try {
     if ($Seconds -le 0) { $Seconds = if ($cfg.PSObject.Properties['sleepPromptSeconds']) { [int]$cfg.sleepPromptSeconds } else { 120 } }
     $minMinutes = if ($cfg.PSObject.Properties['sleepMinMinutes']) { [double]$cfg.sleepMinMinutes } else { 15 }
     $maxHours = if ($cfg.PSObject.Properties['sleepMaxHours']) { [double]$cfg.sleepMaxHours } else { 12 }
+    # 週の上限は解除まで数日あるのが普通。復帰タスクが解除時刻 (絶対時刻) に起こすので、こちらの上限で判断する
+    $maxHoursWeekly = if ($cfg.PSObject.Properties['sleepMaxHoursWeekly']) { [double]$cfg.sleepMaxHoursWeekly } else { 192 }
 
     # 1. 利用上限の記録 (最後の会話の記録。auto-resume.ps1 と同じ判定)
     # 利用者の入力ではない user の記録か (サブエージェントの通知 <task-notification>、isMeta の記録など)。
@@ -177,11 +180,6 @@ try {
         Write-Log ("スリープしない: 解除 ({0}) まで {1} 分未満" -f $resetsAt.ToString('MM/dd HH:mm'), $minMinutes)
         exit 0
     }
-    # 解除まで sleepMaxHours より長ければ (週の上限など)、応答が無くてもスリープしない。何日も眠らせたままにしない
-    $hoursLeft = if ($resetsAt) { ($resetsAt - (Get-Date)).TotalHours } else { $null }
-    $noAutoSleep = ($null -ne $hoursLeft) -and $hoursLeft -gt $maxHours
-    $hoursText = if ($null -ne $hoursLeft) { [math]::Round($hoursLeft, 1) } else { '' }
-
     # 3. 解除時刻に復帰するタスク (auto-resume.ps1 が登録する)
     if (-not $DryRun) {
         & $cfg.shellPath -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'auto-resume.ps1') | Out-Null
@@ -190,6 +188,14 @@ try {
     $wakeTask = Get-ScheduledTask -TaskName 'ClaudeAutoResumeGlobal-Wake' -ErrorAction SilentlyContinue
     $wakeAt = if ($wakeTask) { (Get-ScheduledTaskInfo -TaskName 'ClaudeAutoResumeGlobal-Wake').NextRunTime } else { $null }
     if (-not $wakeAt) { $warnings += '解除時刻に復帰するタスクがありません。自動では復帰しません。' }
+    # 解除まで上限の時間より長ければ、応答が無くてもスリープしない (何日も眠らせたままにしない)。
+    # 週の上限 (seven_day / seven_day_opus / seven_day_overage_included など) で復帰タスクがあれば sleepMaxHoursWeekly、ほかは sleepMaxHours
+    $weekly = ($kind -like 'seven_day*') -and $wakeAt
+    $maxName = if ($weekly) { 'sleepMaxHoursWeekly' } else { 'sleepMaxHours' }
+    $effMaxHours = if ($weekly) { $maxHoursWeekly } else { $maxHours }
+    $hoursLeft = if ($resetsAt) { ($resetsAt - (Get-Date)).TotalHours } else { $null }
+    $noAutoSleep = ($null -ne $hoursLeft) -and $hoursLeft -gt $effMaxHours
+    $hoursText = if ($null -ne $hoursLeft) { [math]::Round($hoursLeft, 1) } else { '' }
     $rtc = @(powercfg /query SCHEME_CURRENT SUB_SLEEP RTCWAKE | Select-String -Pattern '0x[0-9a-fA-F]{8}\s*$' | ForEach-Object { [Convert]::ToInt32($_.Matches[0].Value.Trim(), 16) })
     if ($rtc.Count -ge 2 -and $rtc[-2] -ne 1) { $warnings += 'スリープ解除タイマー (電源接続時) が「有効」ではありません (install.ps1 -EnableWakeTimers)。' }
     if ($cfg.action -eq 'wake') { $warnings += 'action が wake のため、復帰しても再開しません (install.ps1 -Action resume)。' }
@@ -226,7 +232,7 @@ try {
         $lines = @("$kind の利用上限に達しました (解除 $resetText)。", "解除時刻に復帰するタスク: $wakeText", '')
         $lines += $warnings | ForEach-Object { "※ $_" }
         if ($noAutoSleep) {
-            $lines += @('', "解除まで $hoursText 時間あるため (sleepMaxHours $maxHours 時間を超える)、$($script:left) 秒たってもスリープしません。スリープするなら「今すぐスリープ」を押してください。")
+            $lines += @('', "解除まで $hoursText 時間あるため ($maxName $effMaxHours 時間を超える)、$($script:left) 秒たってもスリープしません。スリープするなら「今すぐスリープ」を押してください。")
         } else {
             $lines += @('', "$($script:left) 秒後に Windows をスリープします。キャンセルするとスリープしません。")
         }
@@ -251,7 +257,7 @@ try {
 
     if ($script:result -eq 'cancel') { Write-Log "キャンセル: スリープしない ($kind、解除 $resetText)$note"; exit 0 }
     if ($script:result -eq 'timeout' -and $noAutoSleep) {
-        Write-Log ("スリープしない: 解除まで {0} 時間 (sleepMaxHours {1} 時間を超える) ({2}、解除 {3}、復帰タスク {4}){5}" -f $hoursText, $maxHours, $kind, $resetText, $wakeText, $note)
+        Write-Log ("スリープしない: 解除まで {0} 時間 ({1} {2} 時間を超える) ({3}、解除 {4}、復帰タスク {5}){6}" -f $hoursText, $maxName, $effMaxHours, $kind, $resetText, $wakeText, $note)
         exit 0
     }
     Write-Log ("スリープする ({0}: {1}、解除 {2}、復帰タスク {3}){4}" -f $script:result, $kind, $resetText, $wakeText, $note)
