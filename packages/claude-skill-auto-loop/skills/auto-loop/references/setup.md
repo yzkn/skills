@@ -29,7 +29,7 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
 7. **起動時・スリープ解除時の自動起動を有効にする（任意。利用者の了承を得てから。Windows 専用）。** 上限で止まったセッションが無くても、ログオン時・スリープ復帰時に、やることがあれば新しいウィンドウでセッションを起こし、`/auto-loop next` を実行させる。タスクスケジューラにタスク `AutoLoopKick` を登録するので、何が起きるか（下の表）を示して了承を得る。`auto-resume-global` が導入済みのときだけ動く
 
    ```
-   pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -EnableKick     # 止めるときは -DisableKick
+   pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -EnableKick     # 止めるときは -DisableKick。一定間隔も使うなら -KickIntervalMinutes 15 など
    pwsh -NoProfile -File <scripts>/kick.ps1 -DryRun                    # 判断だけを見る（起こさない）
    ```
 
@@ -38,8 +38,12 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
    | `enabled` | `false` | `-EnableKick` で `true` |
    | `minIntervalHours` | `4` | 前に起こしてから、次に起こすまでの最短の時間 |
    | `idle` / `idleMinIntervalHours` | `true` / `24` | 通常のタスクが無いとき、手が空いたときの作業のために起こすか・その間隔 |
-   | `busyMinutes` | `15` | この分の内に記録が書かれたセッションがあれば、起こさない（共倒れを防ぐ） |
+   | `busyMinutes` | `15` | 手を動かしているセッション（最後の記録が利用者の入力・ツールの結果・ツールの呼び出しで、この分の内に書かれたもの。サブエージェントの記録を含む）があれば、起こさない（共倒れを防ぐ）。入力待ち・指示が無い・上限の解除待ち・この分より長く書かれていないセッションは数えない |
    | `idleCloseMinutes` | `60` | 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（`0` なら終わらせない。その間 PC は眠らず、次も起こせない） |
+   | `intervalMinutes` | `0` | この分ごとにも `kick.ps1` を起動する（`0` なら使わない。`install.ps1 -NoCopy -EnableKick -KickIntervalMinutes 15` で設定とタスクを一緒に変える）。起こすかの判断は同じで、`minIntervalHours` の内は続けて起こさない（間隔の起動を生かすなら、`minIntervalHours` を `0.5` などに下げる） |
+   | `weeklyAtReset` | `true` | 週の上限の解除時刻の 6 分後に、毎週 PC を起こして `kick.ps1` を起動する（タスク `AutoLoopKickWeekly`。このときは `minIntervalHours` を見ない）。解除時刻が変わったら `kick.ps1` が登録し直す |
+   | `weeklyResetAt` | `''` | 週の解除の曜日・時刻を手で決める（例 `Thu 08:00`、`木 8:00`）。空なら、セッションの記録の週の上限（`rateLimitType` が `seven_day` 系）の `resetsAt` から取る（結果は `state/kick-weekly.json`） |
+   | `statusEveryMinutes` | `60` | PC の状況（指令リポジトリの `state/pcs/<ID>.json`。判断・理由・セッションの数・次の復帰・週次の起動の時刻）を、中身が変わらなくてもこの分ごとに書き直す（`0` なら書かない）。このファイルだけをコミットし、作業ツリーにほかの変更が無いときだけ push する。パスは書かない |
    | `permissionMode` / `remoteControl` | `auto` / `true` | 起こすセッションの権限モード・Remote Control |
    | `prompt` | 空 | 最初に送る指示（空なら既定の「`/auto-loop next` を実行」） |
 
