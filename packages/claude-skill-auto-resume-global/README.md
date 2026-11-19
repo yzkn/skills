@@ -7,7 +7,7 @@ Claude Code の利用上限（5 時間・週）で止まった対話セッショ
 | 種別       | Claude Code スキル（スクリプト同梱）                                       |
 | 導入先     | `.claude/skills/auto-resume-global/` または `~/.claude/skills/auto-resume-global/` |
 | 公開区分   | 🟢 公開可（本リポジトリ独自）                                               |
-| 出典       | 本リポジトリ独自                                                           |
+| 出典       | 本リポジトリ独自（正本は https://github.com/aiyzkn/auto-loop-engineering の `skills/auto-resume-global/`） |
 
 ## これは何か
 
