@@ -305,18 +305,24 @@ function Test-LoopAssignee {
     return ($Me -eq $Assignee) -or (($Me -split '-') -contains $Assignee)
 }
 
-# 受付（inbox.md）の未整理の件: 目印の行より下の「## 」見出し。Urgent は、そのうち「優先: 緊急」と書かれた件数
+# 受付（inbox.md）の未整理の件: 「## 」見出し 1 つが 1 件。書く場所は問わない（冒頭の案内の下でも、末尾の目印の下でもよい）。
+# 数えないもの: コードの囲み（```）の中（書き方の例）、「## 手が空いた時に実行するタスク」の節（次の「## 」まで）。
+# Urgent は、そのうち「優先: 緊急」と書かれた件数
 function Get-InboxSummary {
     param($Config)
     $count = 0; $urgent = 0
     $file = Join-Path $Config.controlRepoPath 'inbox.md'
     if (Test-Path -LiteralPath $file) {
-        $after = $false
+        $fence = $false; $inItem = $false
         foreach ($l in (Read-LoopText $file) -split '\r?\n') {
-            if ($l -match '<!--\s*ここから下に追記') { $after = $true; continue }
-            if (-not $after) { continue }
-            if ($l -match '^##\s+\S') { $count++ }
-            elseif ($l -match '^優先[:：]\s*(緊急|urgent)') { $urgent++ }
+            if ($l -match '^\s*```') { $fence = -not $fence; continue }
+            if ($fence) { continue }
+            if ($l -match '^##\s+\S') {
+                $inItem = -not ($l -match '^##\s+手が空いた時に実行するタスク')
+                if ($inItem) { $count++ }
+                continue
+            }
+            if ($inItem -and $l -match '^優先[:：]\s*(緊急|urgent)') { $urgent++ }
         }
     }
     return [pscustomobject]@{ Count = $count; Urgent = $urgent }

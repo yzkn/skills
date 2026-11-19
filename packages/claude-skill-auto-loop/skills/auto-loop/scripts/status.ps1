@@ -44,7 +44,7 @@ $rows = foreach ($t in $tasks) {
 # 状態ごとに、優先度の高い順 → 古い順（着手の順の目安。AGENTS.md「7. 着手の順」）
 $rows = @($rows | Sort-Object sort, prio, created, project, id)
 
-# 受付（inbox.md）の未整理の件数: 目印の行より下の「## 」見出し
+# 受付（inbox.md）の未整理の件数: 「## 」見出し（書き方の例と「手が空いた時に実行するタスク」の節を除く。Get-InboxSummary）
 $inboxSummary = Get-InboxSummary $cfg
 $inbox = $inboxSummary.Count
 $idle = @(Get-IdleDefinitions $cfg)
