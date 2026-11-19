@@ -8,19 +8,19 @@
 
 | 種別                                             | パッケージ数 |
 | ------------------------------------------------ | -----------: |
-| Claude Code スキル                               |           62 |
+| Claude Code スキル                               |           63 |
 | Claude Code サブエージェント                     |           21 |
 | Claude Code ルール（CLAUDE.md から読み込む規約） |           16 |
 | Claude Code フック                               |            5 |
 | 共有スクリプト                                   |            9 |
 | Git フック                                       |            1 |
-| **合計**                                         |      **114** |
+| **合計**                                         |      **115** |
 
 ## 公開区分
 
 | 区分                   | 件数 | 意味                                                                       |
 | ---------------------- | ---: | -------------------------------------------------------------------------- |
-| 🟢 公開可（独自）       |   78 | 切り出し元の Apache-2.0 を継承。著作権表示は Copyright 2026 YA（記入済み） |
+| 🟢 公開可（独自）       |   79 | 切り出し元の Apache-2.0 を継承。著作権表示は Copyright 2026 YA（記入済み） |
 | 🟢 公開可（第三者由来） |   36 | permissive。原典 LICENSE の同梱と帰属表示が必須                            |
 
 ## Claude Code スキル
@@ -34,6 +34,7 @@
 | [`claude-skill-apple-design`](packages/claude-skill-apple-design/)                                 | `.claude/skills/apple-design/`                           | 🟢 第三者由来 |          2 | Apple のインターフェースデザインと物理的なモーションを Web に翻案した実装・レビュー指針。「Apple 風の UI を設計して」「モーションを診断して」で自動適用。/apple-design [対象]。                                                              |
 | [`claude-skill-auto-loop`](packages/claude-skill-auto-loop/)                                       | `.claude/skills/auto-loop/`                              | 🟢 独自       |         33 | ループエンジニアリング（長時間・複数案件の作業を、指令リポジトリの Markdown で状態管理しながら進める）の手順。起票・着手前の確認・担当の主張・状態の記録・再開・委任・完了の報告。/auto-loop <setup\|status\|intake\|start\|…> |
 | [`claude-skill-auto-resume`](packages/claude-skill-auto-resume/)                                   | `.claude/skills/auto-resume/`                            | 🟢 独自       |          1 | 5 時間のセッションリミット（429）で中断した作業を、解除時刻に自動で再開できる状態にする。「リミットが解けたら自動で続けて」「セッションが切れても再開したい」「自動再開の状態を見せて」で自動適用。/auto-resume <status                      |
+| [`claude-skill-auto-resume-global`](packages/claude-skill-auto-resume-global/)                     | `.claude/skills/auto-resume-global/`                     | 🟢 独自       |         10 | Claude Code の利用上限（5 時間・週）で止まった対話セッションを、この PC の全プロジェクトについて見張り、解除時刻に Windows をスリープから復帰させ、新しいターミナルのウィンドウで claude --resume -                      |
 | [`claude-skill-bulk-ops`](packages/claude-skill-bulk-ops/)                                         | `.claude/skills/bulk-ops/`                               | 🟢 第三者由来 |          3 | 多数ファイル（目安 10 件以上）の一括解析・一括改名・一括置換をスクリプトで完結させ、要約だけをコンテキストに載せる。「まとめてリネームして」「一括削除して」で自動適用。/bulk-ops <サブコマンド>。書き込みは dry-run→承                      |
 | [`claude-skill-citation-format`](packages/claude-skill-citation-format/)                           | `.claude/skills/citation-format/`                        | 🟢 第三者由来 |          2 | 外部ソースの引用書式規約（引用ブロック・文中参照・典拠一覧）。design/・report/ 配下では自動適用される。「引用の書き方」「典拠一覧を作って」で呼び出す。/citation-format。                                                                    |
 | [`claude-skill-code-refactor`](packages/claude-skill-code-refactor/)                               | `.claude/skills/code-refactor/`                          | 🟢 独自       |          6 | コードの外部的な振る舞いを変えずに内部構造を改善するスキル。/project-code-review の指摘事項を受けて呼び出されるほか、単独でも使用できる。                                                                                                    |
