@@ -5,6 +5,7 @@ project: {{project}}
 status: ready
 stage: {{stage}}
 priority: {{priority}}
+order:
 assignee: {{assignee}}
 claimed_by:
 claimed_at:

@@ -8,7 +8,8 @@
     1. config.json の kick.enabled が true
     2. auto-resume-global が導入済みで、停止中（disabled）でない
     3. 前に起こしたセッションが、手を動かしていない（プロセスが無いか、入力待ちなど。auto-resume-global が再開したセッションは 5 で見る）
-    4. 上限の解除待ちでない（復帰タスク ClaudeAutoResumeGlobal-Wake が先の時刻に登録されていない）
+    4. 上限の解除待ちでない（復帰タスク ClaudeAutoResumeGlobal-Wake が先の時刻に登録されていない。復帰タスクが無くても、
+       セッションの記録に解除時刻が先の上限があり、そのあとに普通の応答が無ければ見送る。Find-PendingLimit。-Force では見ない）
     5. この PC で、手を動かしているセッションが無い。手が止まっているもの（claude が起動していない / 起動したが指示が無い /
        利用者の入力待ち / 上限の解除待ち / kick.busyMinutes 分より長く書かれていない）は数えない（Get-BusySessions）
     6. 前に起こしてから kick.minIntervalHours 時間が過ぎている（週の解除時刻の起動 -Trigger weekly では見ない）
@@ -25,9 +26,9 @@
 .PARAMETER DryRun
   判断だけを表示する（起こさない・記録を書かない・kick.enabled を見ない）
 .PARAMETER Force
-  kick.enabled と 6 の間隔を見ない（手で試すとき）
+  kick.enabled・4 のセッションの記録の上限・6 の間隔を見ない（手で試すとき）
 .PARAMETER SkipSystemChecks
-  3〜4 のうち、プロセスとタスクスケジューラを見る部分を飛ばす（試験用）
+  3〜4 のうち、プロセスとタスクスケジューラを見る部分を飛ばす（試験用。セッションの記録の上限は見る）
 .EXAMPLE
   pwsh -NoProfile -File kick.ps1 -DryRun
 #>
@@ -143,6 +144,20 @@ if (-not $SkipSystemChecks) {
             if ($info.NextRunTime -and $info.NextRunTime -gt (Get-Date)) { Skip "上限の解除待ち（復帰タスクが $($info.NextRunTime.ToString('MM/dd HH:mm')) に登録されている）" }
         }
         catch { }
+    }
+}
+# 4b. 復帰タスクが無くても、セッションの記録に解除されていない上限があれば見送る（手でスリープ解除したとき・auto-resume-global の対象外のセッションなど）。
+#     ファイルだけで判断するので -SkipSystemChecks でも見る。-Force では見ない
+if (-not $Force) {
+    $limit = $null
+    try {
+        $margin = if ($arCfg.PSObject.Properties['marginMinutes'] -and $null -ne $arCfg.marginMinutes) { [double]$arCfg.marginMinutes } else { 3 }
+        $limit = Find-PendingLimit -ProjectsDir $projects -MarginMinutes $margin
+    }
+    catch { Write-LoopLog 'kick' "セッションの記録の上限を調べられなかった: $($_.Exception.Message)" }
+    if ($limit) {
+        $script:pcStatus.limitResetAt = $limit.ResetAt.ToString('yyyy-MM-ddTHH:mm:sszzz')
+        Skip "上限の解除待ち（セッションの記録: $($limit.Kind)、解除 $($limit.ResetAt.ToString('MM/dd HH:mm'))。$($limit.Project) の $($limit.SessionId.Substring(0, [math]::Min(8, $limit.SessionId.Length)))）"
     }
 }
 
