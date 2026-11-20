@@ -65,3 +65,9 @@ projects/<案件>/
 
 - 認証情報（トークン・パスワード・鍵）、個人情報
 - コード・大きなファイル・一時ファイル（各 PC の `~/.claude/auto-loop/work/<タスク ID>/` に置く）
+
+## 関係するリポジトリ
+
+- **キット** [aiyzkn/auto-loop-engineering](https://github.com/aiyzkn/auto-loop-engineering): このリポジトリのひな形と、`auto-loop` スキル（スクリプトを含む）の正本。スクリプトはこのリポジトリには置かず、各 PC の `~/.claude/skills/auto-loop/` に導入したものが、ここを読み書きする
+- **決まりの同期**: `AGENTS.md`・`policy.md`・`templates/` はキットのひな形と同じに保つ。変えるときはキットを先に直し、ここにも同じ変更を入れる（ここで先に直したときは、キットにも戻す）
+- **ダッシュボード**（任意） [aiyzkn/loop-control-dashboard](https://github.com/aiyzkn/loop-control-dashboard): このリポジトリをブラウザから見て操作するページ。データは置かず、利用者のトークンでここを読み書きする
