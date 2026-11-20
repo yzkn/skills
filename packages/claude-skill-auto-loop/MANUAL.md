@@ -20,7 +20,7 @@
 | `skills/auto-loop/scripts/install.ps1` | 導入（スキルの写し、`~/.claude/auto-loop/` の設定とフォルダ）。何度実行しても安全。`-LinkAutoResume` で `auto-resume-global` と連携。`-EnableKick` / `-DisableKick` で、起動時・スリープ解除時の自動起動（タスク `AutoLoopKick`。`-KickIntervalMinutes` で一定間隔も。週の上限の解除時刻が分かれば `AutoLoopKickWeekly` も）を登録・削除 |
 | `skills/auto-loop/scripts/new-control-repo.ps1` | 指令リポジトリをひな形から手元に作る（`git init` と最初のコミットまで） |
 | `skills/auto-loop/scripts/preflight.ps1` | 着手前の確認。1 行 1 項目で `OK / INFO / WARN / NG`。NG があれば終了コード 1 |
-| `skills/auto-loop/scripts/status.ps1` | 全案件の状態の要約（`-Json` あり）。状態ごとに、優先度の高い順・古い順 |
+| `skills/auto-loop/scripts/status.ps1` | 全案件の状態の要約（`-Json` あり）。状態ごとに、優先度の高い順 → `order`（利用者が並べた順）→ 古い順 |
 | `skills/auto-loop/scripts/new-task.ps1` | タスクファイルの作成（ID は `<日付>-<名前>`）。`-Priority urgent`（利用者が緊急と指定したとき）、`-Source idle`（手が空いたときの作業） |
 | `skills/auto-loop/scripts/claim.ps1` | 担当の主張・印・解放・引き継ぎ（`claim` / `heartbeat` / `release` / `takeover`）。終了コード 2 = 担当できない |
 | `skills/auto-loop/scripts/sync.ps1` | 指令リポジトリの同期（コミット → `pull --rebase` → push）。競合したら取り消して報告する |
@@ -109,6 +109,11 @@
    - 起動のきっかけに、一定間隔（`-KickIntervalMinutes`）と、週の上限の解除時刻の週次（タスク `AutoLoopKickWeekly`、PC を起こす）を足した
    - PC の状況を、指令リポジトリの `state/pcs/<ID>.json` に書くようにした（参照だけのダッシュボード用）
    - 作成した PC で、タスクスケジューラへの登録（30 分ごとの繰り返し、週次の起動）と、タスクから起動した `kick.ps1` が見送りの判断と PC の状況を書いて push するところまでを確かめた
+6. 2026-11-20 に、次を足した
+   - 自動起動（`kick.ps1`）は、`auto-resume-global` の復帰タスクが無くても、セッションの記録にある上限の解除時刻が先なら起こさない（解除前に起こして、すぐ上限で止まるのを避ける）
+   - 同じ PC・同じエージェントの ID の別のセッション（上限からの再開と自動起動など）が、同じタスクを並行して進めない。担当したセッションを進行中の印に書き、そのセッションが手を動かしている間は、`claim.ps1` が終了コード 2 で止める。実際に 2 つのセッションが同じタスクを進め、同じブランチに push したことがあったため
+   - タスクの先頭に `order`（同じ優先度の中の順。小さいほど先、空は後ろ）。利用者がダッシュボードなどで並べ、一覧と着手の順に使う。エージェントは書き換えない
+   - 指令リポジトリのひな形で、グローバルの設定の場所を `~/.claude/CLAUDE.md` に直した
 
 ## 8. 公開前チェック
 

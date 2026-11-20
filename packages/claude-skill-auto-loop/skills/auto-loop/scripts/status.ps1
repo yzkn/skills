@@ -34,15 +34,16 @@ $rows = foreach ($t in $tasks) {
     if ($t.claimedBy -and $t.status -eq 'doing' -and $null -ne $age -and $age -gt $cfg.leaseHours) { $flag = 'stale' }
     if ($t.claimedBy -eq $me) { $flag = (@($flag, 'mine') | Where-Object { $_ }) -join ',' }
     [pscustomobject]@{
-        project = $t.project; id = $t.id; status = $t.status; stage = $t.stage; priority = $t.priority
+        project = $t.project; id = $t.id; status = $t.status; stage = $t.stage; priority = $t.priority; order = $t.order
         assignee = $t.assignee; claimedBy = $t.claimedBy; ageHours = $age; flag = $flag; title = $t.title
         created = $t.created
         sort = $(if ($order.ContainsKey($t.status)) { $order[$t.status] } else { 9 })
         prio = Get-PriorityRank $t.priority
+        ord = Get-OrderKey $t.order
     }
 }
-# 状態ごとに、優先度の高い順 → 古い順（着手の順の目安。AGENTS.md「7. 着手の順」）
-$rows = @($rows | Sort-Object sort, prio, created, project, id)
+# 状態ごとに、優先度の高い順 → order（利用者が並べた順。無いものは後ろ）→ 古い順（着手の順の目安。AGENTS.md「7. 着手の順」）
+$rows = @($rows | Sort-Object sort, prio, ord, created, project, id)
 
 # 受付（inbox.md）の未整理の件数: 「## 」見出し（書き方の例と「手が空いた時に実行するタスク」の節を除く。Get-InboxSummary）
 $inboxSummary = Get-InboxSummary $cfg
@@ -52,6 +53,16 @@ $idle = @(Get-IdleDefinitions $cfg)
 $activeDir = Join-Path (Get-LoopHome) 'state/active'
 $active = @()
 if (Test-Path -LiteralPath $activeDir) { $active = @(Get-ChildItem -LiteralPath $activeDir -Filter '*.json' | ForEach-Object { Read-LoopText $_.FullName | ConvertFrom-Json }) }
+# 印のセッションの状態（20261120-no-parallel-sessions）。otherSessionLive が true のタスクは、同じ PC の別のセッションが手を動かしているので、再開の候補にしない
+$session = Get-CurrentSession
+foreach ($m in $active) {
+    $sid = if ($m.PSObject.Properties['sessionId']) { [string]$m.sessionId } else { '' }
+    $mine = [bool]($session -and $sid -and $sid -eq $session.SessionId)
+    $live = if ($sid -and -not $mine) { Test-SessionLive $m } else { $null }
+    $m | Add-Member -NotePropertyName thisSession -NotePropertyValue $mine -Force
+    $m | Add-Member -NotePropertyName otherSessionLive -NotePropertyValue ([bool]($live -and $live.Live)) -Force
+    $m | Add-Member -NotePropertyName sessionState -NotePropertyValue $(if ($mine) { 'this' } elseif ($live) { $live.Reason } else { 'no-session' }) -Force
+}
 
 if ($Json) {
     [pscustomobject]@{
@@ -82,6 +93,9 @@ if ($idle.Count) {
 }
 if ($active.Count) {
     Write-Output 'この PC で進行中の印（state/active）:'
-    foreach ($a in $active) { Write-Output "  $($a.project)/$($a.task)  cwd=$($a.cwd)" }
+    foreach ($a in $active) {
+        $who = if ($a.thisSession) { '  ← このセッション' } elseif ($a.otherSessionLive) { "  ← 別のセッションが作業中（$($a.sessionState)）" } else { '' }
+        Write-Output "  $($a.project)/$($a.task)  cwd=$($a.cwd)$who"
+    }
 }
 Write-LoopLog 'status' "tasks=$($rows.Count) inbox=$inbox"

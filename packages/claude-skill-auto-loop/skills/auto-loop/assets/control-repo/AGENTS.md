@@ -24,6 +24,7 @@
 | `status` | `draft` / `ready` / `doing` / `waiting` / `blocked` / `done` / `dropped` |
 | `stage` | `propose`（提案だけ）/ `implement`（PR・MR の作成まで）/ `merge`（マージまで）。範囲は [policy.md](policy.md) |
 | `priority` | `urgent`（緊急。**利用者が指定したときだけ**）/ `high` / `normal` / `low`。着手の順は「7. 着手の順」 |
+| `order` | 同じ優先度の中の順（任意の数。小さいほど先。空なら同じ優先度の後ろ）。利用者が並べる（ダッシュボードの並べ替えなど）。エージェントは書き換えない |
 | `assignee` | `any`、エージェントの ID、または道具の名前（`claude` など） |
 | `claimed_by` / `claimed_at` | 担当しているエージェントの ID と、担当した時刻 |
 | `heartbeat_at` | 担当しているエージェントが最後に状態を書いた時刻 |
@@ -36,6 +37,7 @@
 2. タスクファイルを読む。`claimed_by` が空で、`status` が `ready`（または自分が担当の `doing` / `waiting` / `blocked`）で、`assignee` が自分に合うことを確かめる
 3. `claimed_by`・`claimed_at`・`heartbeat_at` を書き、`status: doing` にして、**そのファイルだけ**をコミットする（メッセージ `[<ID>] claim <タスク ID>`）
 4. `git push`。**拒否されたら、自分のコミットを取り消して 1 からやり直す**（先に push したエージェントが担当）。push が通るまで、作業を始めない
+5. 同じ PC・同じ ID の別のセッション（上限からの再開と自動起動など）も、同じタスクを二重に進めない。この PC の進行中の印（`state/active/<タスク ID>.json`）に担当したセッションを書き、そのセッションが生きて手を動かしている間は、別のセッションは続けない（Claude Code では `claim.ps1` が終了コード 2 で止める）
 
 ### 作業中
 
@@ -80,9 +82,10 @@
   1. `priority`: `urgent` > `high` > `normal` > `low`
   2. 利用者の回答・承認が届いて進められるようになった `waiting`、原因が取り除かれた `blocked`
   3. 期限、ほかのタスクの前提になっているか（依頼・「決定事項」に書いてあるもの）
-  4. 同じなら古い順（`created`）
+  4. 同じ優先度の中では `order`（利用者が並べた順。小さいほど先、空のものは後ろ）
+  5. 同じなら古い順（`created`）
 - 判定で起票時と順が変わったら、着手するタスクのログに理由を 1 行残す。**`priority` を `urgent` に上げてよいのは利用者だけ**（エージェントは `high` 以下の範囲で書き換えてよい。書き換えたらログに残す）
-- 一覧（`status.ps1`）は、状態ごとに優先度の高い順・古い順に並ぶ。Claude Code では、この節の判断を `/auto-loop next` が手順として行う
+- 一覧（`status.ps1`）は、状態ごとに優先度の高い順 → `order` → 古い順に並ぶ。Claude Code では、この節の判断を `/auto-loop next` が手順として行う
 
 ### 7.2 着手済みのタスクは続ける。緊急だけは先に行う
 
@@ -92,7 +95,7 @@
   2. 「現在地」に「緊急タスク `<ID>` のため中断」と次の一手を書き、checkpoint する。担当は保つ（`status` は `doing` のまま）。緊急タスクが長引く見込み（目安 24 時間超）なら、`status: ready` で解放する
   3. 緊急タスクを claim して行う
   4. 終わったら、中断したタスクに戻る（再開の手順で前提を確かめ直す）
-- 緊急タスクどうしは古い順。緊急でも [policy.md](policy.md) の承認の境界は変わらない
+- 緊急タスクどうしは `order` → 古い順。緊急でも [policy.md](policy.md) の承認の境界は変わらない
 
 ### 7.3 PC 1 台につき、原則 1 つのリポジトリのタスクだけ
 
@@ -132,7 +135,7 @@
 
 1. `inbox.md` の「手が空いた時に実行するタスク」に定義されたもの（上から順。`間隔` の内に実施済みのものは飛ばす）
 2. 定義が無い・すべて実施済みなら、次のうち 1 つ
-   - `~/CLAUDE.md` やその他の設定ファイル（`~/.claude/` のスキル・設定、各リポジトリの `CLAUDE.md` / `AGENTS.md`）の整理
+   - `~/.claude/CLAUDE.md` やその他の設定ファイル（`~/.claude/` のスキル・設定、各リポジトリの `CLAUDE.md` / `AGENTS.md`）の整理
    - 過去に実装した既存のアプリケーション（`projects/` の案件）のリファクタリング
    - 仕様・機能の追加の提案
    - ドキュメントの拡充
@@ -141,7 +144,7 @@
 
 - **通常のタスクと同じに起票してから行う**（`source: idle`、`priority: low`）。案件に属さないもの（定義の案件が `設定`）は起票せず、結果を利用者に報告する
 - 定義そのものは `inbox.md` に残す（消さない）。行ったら、その定義の `最終実施:` の行を書き換える（`最終実施: <日付> <タスク ID か 1 行の結果>`）。`間隔` の判定はこの行で行う
-- 段階は、定義に `段階:` があればそれ、無ければ `propose`（提案だけ）。**マージはしない**。`~/CLAUDE.md`・`settings.json` などグローバルの設定の書き換えは [policy.md](policy.md) の「常に個別の承認が要る操作」なので、変更の案（差分）を作って `status: waiting` で承認を待つ
+- 段階は、定義に `段階:` があればそれ、無ければ `propose`（提案だけ）。**マージはしない**。`~/.claude/CLAUDE.md`・`settings.json` などグローバルの設定の書き換えは [policy.md](policy.md) の「常に個別の承認が要る操作」なので、変更の案（差分）を作って `status: waiting` で承認を待つ
 - **利用枠を使いすぎない**
   - 1 回に 1 件。終わったら次の手が空いた機会まで行わない（続けて次々に行わない）
   - サブエージェントへの委任・並列をしない
@@ -155,9 +158,9 @@
 | やること | コマンド（`pwsh -NoProfile -File <scripts>/...`） |
 |---|---|
 | 一覧 | `status.ps1 [-Mine] [-Project <案件>]` |
-| 起票 | `new-task.ps1 -Project <案件> -Title <件名> -Slug <短い名前> -Stage <段階> [-Priority <urgent / high / normal / low>] [-Source <inbox / direct / idle>]` |
+| 起票 | `new-task.ps1 -Project <案件> -Title <件名> -Slug <短い名前> -Stage <段階> [-Priority <urgent / high / normal / low>] [-Source <inbox / direct / file / idle>]` |
 | 担当・印・解放 | `claim.ps1 <claim / heartbeat / release / takeover> <タスク ID> [-Status ...] [-Note ...]` |
 | 同期 | `sync.ps1 -Message <要約>` / `sync.ps1 -PullOnly` |
 | 着手前の確認 | `preflight.ps1 -Project <案件>` |
 | 次にやることを決める（7 章） | `/auto-loop next`（手順。判断の材料は `status.ps1 -Json`） |
-| 起動時・スリープ解除時の自動起動 | `install.ps1 -NoCopy -EnableKick`（止めるときは `-DisableKick`）。判断だけを見る: `kick.ps1 -DryRun` |
+| 起動時・スリープ解除時の自動起動 | `install.ps1 -NoCopy -EnableKick [-KickIntervalMinutes <分>]`（止めるときは `-DisableKick`）。判断だけを見る: `kick.ps1 -DryRun` |

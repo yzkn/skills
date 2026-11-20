@@ -135,55 +135,65 @@ function Test-RemoteBranch {
 # 取り込みだけ（未コミットの変更は autostash で保つ）
 function Update-ControlRepo {
     param($Config)
-    $repo = $Config.controlRepoPath
-    $remote = Get-ControlRemote $Config
-    if (-not $remote) { return [pscustomobject]@{ Ok = $true; Reason = 'local-only'; Detail = '' } }
-    $branch = Get-ControlBranch $Config
-    $rb = Test-RemoteBranch $Config $remote $branch
-    if (-not $rb.Ok) { return [pscustomobject]@{ Ok = $false; Reason = 'remote'; Detail = $rb.Detail } }
-    if (-not $rb.Exists) { return [pscustomobject]@{ Ok = $true; Reason = 'remote-empty'; Detail = '' } }
-    $r = Invoke-Git $repo @('pull', '--rebase', '--autostash', $remote, $branch)
-    if ($r.Code -ne 0) {
-        $conflict = $r.Text -match 'CONFLICT|could not apply'
-        Invoke-Git $repo @('rebase', '--abort') | Out-Null
-        return [pscustomobject]@{ Ok = $false; Reason = $(if ($conflict) { 'conflict' } else { 'pull' }); Detail = $r.Text }
+    # 同じ PC の別のセッションと、指令リポジトリの git の操作が重ならないようにする（20261120-no-parallel-sessions）
+    $lock = Enter-ControlLock $Config
+    try {
+        $repo = $Config.controlRepoPath
+        $remote = Get-ControlRemote $Config
+        if (-not $remote) { return [pscustomobject]@{ Ok = $true; Reason = 'local-only'; Detail = '' } }
+        $branch = Get-ControlBranch $Config
+        $rb = Test-RemoteBranch $Config $remote $branch
+        if (-not $rb.Ok) { return [pscustomobject]@{ Ok = $false; Reason = 'remote'; Detail = $rb.Detail } }
+        if (-not $rb.Exists) { return [pscustomobject]@{ Ok = $true; Reason = 'remote-empty'; Detail = '' } }
+        $r = Invoke-Git $repo @('pull', '--rebase', '--autostash', $remote, $branch)
+        if ($r.Code -ne 0) {
+            $conflict = $r.Text -match 'CONFLICT|could not apply'
+            Invoke-Git $repo @('rebase', '--abort') | Out-Null
+            return [pscustomobject]@{ Ok = $false; Reason = $(if ($conflict) { 'conflict' } else { 'pull' }); Detail = $r.Text }
+        }
+        return [pscustomobject]@{ Ok = $true; Reason = 'updated'; Detail = '' }
     }
-    return [pscustomobject]@{ Ok = $true; Reason = 'updated'; Detail = '' }
+    finally { Exit-ControlLock $lock }
 }
 
 # コミット（変更があれば）→ 取り込み → 送信。競合したら rebase を取り消して報告する（強制はしない）
 function Sync-ControlRepo {
     param($Config, [Parameter(Mandatory)][string]$Message)
-    $repo = $Config.controlRepoPath
-    $committed = $false
-    if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) {
-        Invoke-Git $repo @('add', '-A') | Out-Null
-        $r = Invoke-Git $repo @('commit', '-m', $Message)
-        if ($r.Code -ne 0) { return [pscustomobject]@{ Ok = $false; Reason = 'commit'; Detail = $r.Text; Committed = $false; Pushed = $false } }
-        $committed = $true
-    }
-    $remote = Get-ControlRemote $Config
-    if (-not $remote) { return [pscustomobject]@{ Ok = $true; Reason = 'local-only'; Detail = ''; Committed = $committed; Pushed = $false } }
-    $branch = Get-ControlBranch $Config
-    $last = ''
-    for ($i = 1; $i -le 3; $i++) {
-        $rb = Test-RemoteBranch $Config $remote $branch
-        if (-not $rb.Ok) { return [pscustomobject]@{ Ok = $false; Reason = 'remote'; Detail = $rb.Detail; Committed = $committed; Pushed = $false } }
-        if ($rb.Exists) {
-            $r = Invoke-Git $repo @('pull', '--rebase', $remote, $branch)
-            if ($r.Code -ne 0) {
-                $conflict = $r.Text -match 'CONFLICT|could not apply'
-                Invoke-Git $repo @('rebase', '--abort') | Out-Null
-                return [pscustomobject]@{ Ok = $false; Reason = $(if ($conflict) { 'conflict' } else { 'pull' }); Detail = $r.Text; Committed = $committed; Pushed = $false }
-            }
-            $ahead = (Invoke-Git $repo @('rev-list', '--count', "$remote/$branch..HEAD")).Text.Trim()
-            if ($ahead -eq '0') { return [pscustomobject]@{ Ok = $true; Reason = 'up-to-date'; Detail = ''; Committed = $committed; Pushed = $false } }
+    # 同じ PC の別のセッションと、指令リポジトリの git の操作が重ならないようにする（20261120-no-parallel-sessions）
+    $lock = Enter-ControlLock $Config
+    try {
+        $repo = $Config.controlRepoPath
+        $committed = $false
+        if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) {
+            Invoke-Git $repo @('add', '-A') | Out-Null
+            $r = Invoke-Git $repo @('commit', '-m', $Message)
+            if ($r.Code -ne 0) { return [pscustomobject]@{ Ok = $false; Reason = 'commit'; Detail = $r.Text; Committed = $false; Pushed = $false } }
+            $committed = $true
         }
-        $r = Invoke-Git $repo @('push', $remote, "HEAD:$branch")
-        if ($r.Code -eq 0) { return [pscustomobject]@{ Ok = $true; Reason = 'pushed'; Detail = ''; Committed = $committed; Pushed = $true } }
-        $last = $r.Text
+        $remote = Get-ControlRemote $Config
+        if (-not $remote) { return [pscustomobject]@{ Ok = $true; Reason = 'local-only'; Detail = ''; Committed = $committed; Pushed = $false } }
+        $branch = Get-ControlBranch $Config
+        $last = ''
+        for ($i = 1; $i -le 3; $i++) {
+            $rb = Test-RemoteBranch $Config $remote $branch
+            if (-not $rb.Ok) { return [pscustomobject]@{ Ok = $false; Reason = 'remote'; Detail = $rb.Detail; Committed = $committed; Pushed = $false } }
+            if ($rb.Exists) {
+                $r = Invoke-Git $repo @('pull', '--rebase', $remote, $branch)
+                if ($r.Code -ne 0) {
+                    $conflict = $r.Text -match 'CONFLICT|could not apply'
+                    Invoke-Git $repo @('rebase', '--abort') | Out-Null
+                    return [pscustomobject]@{ Ok = $false; Reason = $(if ($conflict) { 'conflict' } else { 'pull' }); Detail = $r.Text; Committed = $committed; Pushed = $false }
+                }
+                $ahead = (Invoke-Git $repo @('rev-list', '--count', "$remote/$branch..HEAD")).Text.Trim()
+                if ($ahead -eq '0') { return [pscustomobject]@{ Ok = $true; Reason = 'up-to-date'; Detail = ''; Committed = $committed; Pushed = $false } }
+            }
+            $r = Invoke-Git $repo @('push', $remote, "HEAD:$branch")
+            if ($r.Code -eq 0) { return [pscustomobject]@{ Ok = $true; Reason = 'pushed'; Detail = ''; Committed = $committed; Pushed = $true } }
+            $last = $r.Text
+        }
+        return [pscustomobject]@{ Ok = $false; Reason = 'push'; Detail = $last; Committed = $committed; Pushed = $false }
     }
-    return [pscustomobject]@{ Ok = $false; Reason = 'push'; Detail = $last; Committed = $committed; Pushed = $false }
+    finally { Exit-ControlLock $lock }
 }
 
 function Find-TaskFile {
@@ -225,6 +235,7 @@ function Get-LoopTasks {
                     status    = $(if ($sub -eq 'archive' -and -not (& $get 'status')) { 'done' } elseif (& $get 'status') { & $get 'status' } else { '?' })
                     stage     = & $get 'stage'
                     priority  = & $get 'priority'
+                    order     = & $get 'order'
                     created   = & $get 'created'
                     assignee  = & $get 'assignee'
                     claimedBy = & $get 'claimed_by'
@@ -383,6 +394,92 @@ function Get-BusySessions {
         }
     }
     return [pscustomobject]@{ Working = $working; Idle = $idle }
+}
+
+# 記録の timestamp（ローカル時刻）。無い・読めなければ $null
+function Get-RecordTime {
+    param($Record)
+    if (-not ($Record.PSObject.Properties['timestamp'] -and $Record.timestamp)) { return $null }
+    try { return ([datetimeoffset]::Parse([string]$Record.timestamp)).LocalDateTime } catch { return $null }
+}
+
+# セッションの記録の 1 行が利用上限の記録か（auto-resume-global の Test-LimitRecord と同じ判定）。上限なら次を、違えば $null を返す。
+#   apiError が usage_limit_reached / model_requires_usage_credits、または error が rate_limit で解除時刻のあるもの（無いものは一時的な 429）
+#   ResetAt: 解除時刻（ローカル。記録に無ければ $null）/ Kind: rateLimitType（無ければ apiError）/ At: 記録の timestamp（無ければ $null）
+function Get-LimitRecordInfo {
+    param($Record)
+    if (-not $Record -or $Record.type -ne 'assistant') { return $null }
+    $byApi = [bool]($Record.PSObject.Properties['apiError'] -and $Record.apiError -in @('usage_limit_reached', 'model_requires_usage_credits'))
+    $byRate = [bool]($Record.PSObject.Properties['error'] -and $Record.error -eq 'rate_limit')
+    if (-not ($byApi -or $byRate)) { return $null }
+    $infos = @()
+    if ($Record.PSObject.Properties['apiErrorParams'] -and $Record.apiErrorParams -and $Record.apiErrorParams.PSObject.Properties['rate_limit_info']) { $infos += $Record.apiErrorParams.rate_limit_info }
+    if ($Record.PSObject.Properties['quotaLimits'] -and $Record.quotaLimits) { $infos += $Record.quotaLimits }
+    $info = @($infos | Where-Object { $_ -and $_.PSObject.Properties['resetsAt'] -and $_.resetsAt } | Select-Object -First 1)
+    if (-not $byApi -and $info.Count -eq 0) { return $null }
+    $reset = $null; $kind = ''
+    if ($info.Count -gt 0) {
+        try { $reset = [DateTimeOffset]::FromUnixTimeSeconds([long]$info[0].resetsAt).LocalDateTime } catch { }
+        if ($info[0].PSObject.Properties['rateLimitType']) { $kind = [string]$info[0].rateLimitType }
+    }
+    if (-not $kind) { $kind = if ($byApi) { [string]$Record.apiError } else { 'rate_limit' } }
+    return [pscustomobject]@{ ResetAt = $reset; Kind = $kind; At = (Get-RecordTime $Record) }
+}
+
+# セッションの記録から「まだ解除されていない利用上限」を探す（kick.ps1 の 4.。依頼 20261119-kick-limit-from-records）。
+# 復帰タスク（auto-resume-global）が無くても、上限で止まっているときに起こさないために使う。
+#   1. LookbackHours 時間の内に書かれた記録（本体・サブエージェント）のうち、resetsAt を含むものだけを読み、上限の記録を探す
+#   2. resetsAt + MarginMinutes が Now より先のものを候補にする（resetsAt の無い上限は、解除時刻が分からないので使わない）
+#   3. 上限はアカウント単位なので、どの記録でも、上限の記録より後に普通の assistant の応答があれば、解除済みとみなして捨てる
+#      （上限のあとに利用者が入力しただけ・また上限、なら解除されていない）
+#   4. 残ったうち、解除時刻が最も遅いものを返す（ResetAt・Kind・At・SessionId・Project）。無ければ $null
+# 記録の形は Claude Code の内部形式（2026-11 時点）。版が変わったら実物に合わせて直す
+function Find-PendingLimit {
+    param([string]$ProjectsDir, [double]$LookbackHours = 170, [double]$MarginMinutes = 3, [datetime]$Now = (Get-Date))
+    if (-not (Test-Path -LiteralPath $ProjectsDir)) { return $null }
+    $rootDir = (Get-Item -LiteralPath $ProjectsDir).FullName
+    $files = @(Get-ChildItem -LiteralPath $rootDir -Recurse -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $Now.AddHours(-$LookbackHours) })
+    if ($files.Count -eq 0) { return $null }
+    # 末尾（Read-SessionTailLines の 4MB）だけを読み、行は -like / -match でまとめて絞る
+    # （ファイル全体の Select-String・1 行ずつの比較は、この PC の 1 週間分 440MB で 5〜7 秒かかった）
+    $cands = @()
+    foreach ($f in $files) {
+        $hits = @(@((Read-SessionTailLines $f.FullName) -like '*"resetsAt"*') -match '"(apiError|error)"\s*:\s*"(usage_limit_reached|model_requires_usage_credits|rate_limit)"')
+        if ($hits.Count -eq 0) { continue }
+        $path = $f.FullName
+        $parts = @($path.Substring($rootDir.Length).TrimStart('\', '/') -split '[\\/]')
+        $sid = if ($parts.Count -ge 3) { $parts[1] } else { [IO.Path]::GetFileNameWithoutExtension($path) }   # サブエージェントの記録なら本体の ID
+        foreach ($l in $hits) {
+            $l = $l.TrimEnd("`r")
+            if (-not $l.StartsWith('{')) { continue }
+            try { $r = $l | ConvertFrom-Json } catch { continue }
+            $li = Get-LimitRecordInfo $r
+            if (-not $li -or -not $li.ResetAt -or $li.ResetAt.AddMinutes($MarginMinutes) -le $Now) { continue }
+            $cands += [pscustomobject]@{ ResetAt = $li.ResetAt; Kind = $li.Kind; At = $li.At; SessionId = $sid; Project = $parts[0] }
+        }
+    }
+    if ($cands.Count -eq 0) { return $null }
+    # 3. 上限の記録より後の普通の応答。最も早い上限の記録より後に書かれたファイルだけを、末尾から読む
+    $known = @($cands | Where-Object { $_.At } | ForEach-Object { $_.At })
+    $lastOk = $null
+    if ($known.Count -gt 0) {
+        $earliest = ($known | Measure-Object -Minimum).Minimum
+        foreach ($f in @($files | Where-Object { $_.LastWriteTime -gt $earliest })) {
+            $lines = @((Read-SessionTailLines $f.FullName) -like '*"assistant"*')
+            for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+                $l = $lines[$i].TrimEnd("`r")
+                if (-not $l.StartsWith('{')) { continue }
+                try { $r = $l | ConvertFrom-Json } catch { continue }
+                if ($r.type -ne 'assistant') { continue }
+                if (($r.PSObject.Properties['apiError'] -and $r.apiError) -or ($r.PSObject.Properties['error'] -and $r.error) -or ($r.PSObject.Properties['isApiErrorMessage'] -and $r.isApiErrorMessage)) { continue }
+                $t = Get-RecordTime $r
+                if ($t) { if (-not $lastOk -or $t -gt $lastOk) { $lastOk = $t }; break }   # このファイルの最後の普通の応答だけを見ればよい
+            }
+        }
+    }
+    $pending = @($cands | Where-Object { -not ($lastOk -and $_.At -and $lastOk -gt $_.At) })
+    if ($pending.Count -eq 0) { return $null }
+    return ($pending | Sort-Object ResetAt -Descending | Select-Object -First 1)
 }
 
 # セッションの記録から、週の上限（rateLimitType が seven_day で始まる）の解除時刻を探す。Since より後に書かれた記録だけを読む。
@@ -617,6 +714,14 @@ function Get-PriorityRank {
     switch ($Priority) { 'urgent' { return 0 } 'high' { return 1 } 'low' { return 3 } default { return 2 } }
 }
 
+# 同じ優先度の中の順（order。小さいほど先）。書いていない・数でない値は、いちばん後ろ（そのあとは古い順）
+function Get-OrderKey {
+    param([string]$Order)
+    $v = 0.0
+    if ($Order -and $Order.Trim() -match '^-?\d+(\.\d+)?$' -and [double]::TryParse($Order.Trim(), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { return $v }
+    return [double]::MaxValue
+}
+
 # assignee が自分に合うか（any・自分の ID・自分の道具の名前）
 function Test-LoopAssignee {
     param([string]$Me, [string]$Assignee)
@@ -703,6 +808,87 @@ function Get-IdleDefinitions {
         }
     }
     return $defs
+}
+
+# --- 同じ PC の複数のセッション（20261120-no-parallel-sessions） ---
+# 担当はエージェント ID 単位なので、同じ PC・同じ ID の 2 つのセッション（上限からの再開と自動起動など）は、どちらも「自分の担当」とみなしてしまう。
+# 進行中の印（state/active/<タスク ID>.json）に担当したセッションを書き、別のセッションが生きて手を動かしている間は、claim / heartbeat / release を通さない。
+
+# Claude Code のセッションの記録のフォルダ（試験では AUTO_LOOP_CLAUDE_PROJECTS で差し替える）
+function Get-ClaudeProjectsDir {
+    if ($env:AUTO_LOOP_CLAUDE_PROJECTS) { return $env:AUTO_LOOP_CLAUDE_PROJECTS }
+    return (Join-Path $HOME '.claude/projects')
+}
+
+# いまのセッション。Claude Code は子のシェルに CLAUDE_CODE_SESSION_ID・CLAUDE_PID を渡す（2026-11 時点、Windows で確認）。
+# 無い（Claude Code 以外の道具・手で実行）なら $null を返し、セッションの判定はしない（エージェント ID 単位のまま）
+function Get-CurrentSession {
+    $sid = [string]$env:CLAUDE_CODE_SESSION_ID
+    if (-not $sid) { return $null }
+    $procId = 0; $start = ''
+    if ([int]::TryParse([string]$env:CLAUDE_PID, [ref]$procId) -and $procId -gt 0) {
+        try { $start = (Get-Process -Id $procId -ErrorAction Stop).StartTime.ToString('o') } catch { $start = '' }
+    }
+    return [pscustomobject]@{ SessionId = $sid; Pid = $procId; ProcessStart = $start }
+}
+
+# 印のセッションが「生きて手を動かしている」か。戻り値の Live が true なら、ほかのセッションは担当を続けられない。
+#   プロセスが終わっている（pid が無い・開始時刻が違う = 番号の使い回し）→ 手放した
+#   記録の状態（Get-SessionActivity）が limit（上限の解除待ち）・waiting-input（入力待ち）・empty → 手放した
+#   working・stale（長いツールの実行・権限の確認待ちもありうる）→ 生きている
+#   記録が見つからない（プロセスは生きている）→ 確かめられないので、生きているとみなす（二重に進めるより安全）
+function Test-SessionLive {
+    param($Mark, [double]$BusyMinutes = 15, [string]$ProjectsDir = (Get-ClaudeProjectsDir))
+    $sid = if ($Mark -and $Mark.PSObject.Properties['sessionId']) { [string]$Mark.sessionId } else { '' }
+    if (-not $sid) { return [pscustomobject]@{ Live = $false; Reason = 'no-session'; SessionId = '' } }
+    $procId = if ($Mark.PSObject.Properties['pid']) { [int]$Mark.pid } else { 0 }
+    if ($procId -gt 0) {
+        $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        # 終わったプロセスでも、ほかのプロセスがハンドルを持っている間は番号で見つかる（HasExited で見分ける）
+        $exited = $false; if ($p) { try { $exited = $p.HasExited } catch { } }
+        if (-not $p -or $exited) { return [pscustomobject]@{ Live = $false; Reason = 'process-ended'; SessionId = $sid } }
+        $want = if ($Mark.PSObject.Properties['processStart']) { [string]$Mark.processStart } else { '' }
+        if ($want) {
+            try {
+                if ([math]::Abs(($p.StartTime - [datetime]::Parse($want, $null, 'RoundtripKind')).TotalSeconds) -gt 2) { return [pscustomobject]@{ Live = $false; Reason = 'process-ended'; SessionId = $sid } }
+            }
+            catch { }
+        }
+    }
+    $log = $null
+    if (Test-Path -LiteralPath $ProjectsDir) {
+        foreach ($d in @(Get-ChildItem -LiteralPath $ProjectsDir -Directory -ErrorAction SilentlyContinue)) {
+            $f = Join-Path $d.FullName "$sid.jsonl"
+            if (Test-Path -LiteralPath $f) { $log = $f; break }
+        }
+    }
+    if (-not $log) {
+        if ($procId -gt 0) { return [pscustomobject]@{ Live = $true; Reason = 'no-transcript'; SessionId = $sid } }
+        return [pscustomobject]@{ Live = $false; Reason = 'no-transcript'; SessionId = $sid }
+    }
+    $state = (Get-SessionActivity -Path $log -BusyMinutes $BusyMinutes).State
+    return [pscustomobject]@{ Live = ($state -in @('working', 'stale')); Reason = $state; SessionId = $sid }
+}
+
+# 指令リポジトリごとの、PC の中の排他（名前付きミューテックス）。同じスレッドなら入れ子にできる。
+# 取れなければ（TimeoutSeconds 秒）例外。前の持ち主が異常終了していたら（AbandonedMutexException）、そのまま取ったものとして使う
+function Enter-ControlLock {
+    param($Config, [int]$TimeoutSeconds = 180)
+    $path = [IO.Path]::GetFullPath([string]$Config.controlRepoPath).TrimEnd('\', '/').ToLowerInvariant()
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path))).Substring(0, 16)
+    $m = [Threading.Mutex]::new($false, "Local\auto-loop-control-$hash")
+    $got = $false
+    try { $got = $m.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds)) }
+    catch [Threading.AbandonedMutexException] { $got = $true }
+    if (-not $got) { $m.Dispose(); throw "指令リポジトリの排他を $TimeoutSeconds 秒で取れない（同じ PC の別のセッションが git の操作中）" }
+    return $m
+}
+
+function Exit-ControlLock {
+    param($Lock)
+    if (-not $Lock) { return }
+    try { $Lock.ReleaseMutex() } catch { }
+    $Lock.Dispose()
 }
 
 Export-ModuleMember -Function *

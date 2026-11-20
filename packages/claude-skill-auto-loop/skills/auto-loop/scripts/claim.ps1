@@ -5,7 +5,10 @@
 .DESCRIPTION
   指令リポジトリのタスクファイルのフロントマター（claimed_by など）を書き換え、push で確定する。
   先に push できたエージェントが担当になる。push が拒否されたら自分の変更を取り消して取り込み直し、判定し直す。
-  終了コード: 0 = 成功 / 1 = 実行できなかった（通信・競合・未コミットの変更）/ 2 = 担当できない（他のエージェントが担当中など）
+  同じ PC・同じエージェント ID でも、進行中の印（state/active）に書いたセッションが生きて手を動かしている間は、別のセッションからは通さない（終了コード 2）。
+  印のセッションが終わっている・上限の解除待ち・入力待ちなら、印をいまのセッションに書き換えて続ける。セッションは Claude Code の環境変数（CLAUDE_CODE_SESSION_ID・CLAUDE_PID）で見分ける
+  指令リポジトリの git の操作は、PC の中で排他にする（同じ clone を 2 つのセッションが同時に触らない）
+  終了コード: 0 = 成功 / 1 = 実行できなかった（通信・競合・未コミットの変更）/ 2 = 担当できない（他のエージェント・同じ PC の別のセッションが担当中など）
 .EXAMPLE
   pwsh -NoProfile -File claim.ps1 claim 20261115-ui-unify
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Note 'A〜B を実装。次は C'
@@ -38,6 +41,38 @@ try { $file = Find-TaskFile $cfg $Task $Project } catch { Stop-With 1 "NG $($_.E
 $rel = Get-RelPath $repo $file.FullName
 $activeDir = Join-Path (Get-LoopHome) 'state/active'
 $activeFile = Join-Path $activeDir "$Task.json"
+$session = Get-CurrentSession
+# 取り込みから push までを、同じ PC の別のセッションと重ねない（プロセスが終われば放される）
+try { $lock = Enter-ControlLock $cfg } catch { Stop-With 1 "NG $($_.Exception.Message)" }
+
+function Read-ActiveMark {
+    if (-not (Test-Path -LiteralPath $activeFile)) { return $null }
+    try { return (Read-LoopText $activeFile | ConvertFrom-Json) } catch { return $null }
+}
+
+# 印のセッションが、いまのセッションと違い、まだ生きて手を動かしていれば止める（20261120-no-parallel-sessions）
+function Assert-SessionOwner {
+    if (-not $session) { return }
+    $mark = Read-ActiveMark
+    if (-not $mark -or -not $mark.PSObject.Properties['sessionId'] -or -not $mark.sessionId -or [string]$mark.sessionId -eq $session.SessionId) { return }
+    $live = Test-SessionLive $mark
+    $sid8 = ([string]$mark.sessionId).Substring(0, [math]::Min(8, ([string]$mark.sessionId).Length))
+    if ($live.Live) {
+        Stop-With 2 "NG $Task は同じ PC の別のセッション（$sid8、pid $($mark.pid)、状態 $($live.Reason)）が担当中。このセッションでは進めない（そのセッションが終わる・入力待ちになるまで待つ）"
+    }
+    Write-LoopLog 'claim' "$Action ${Task}: 印のセッション $sid8 は手放している（$($live.Reason)）。いまのセッションに書き換える"
+}
+
+# 進行中の印を書く（いまのセッションの情報つき）。既にあれば cwd・担当の時刻は保つ
+function Write-ActiveMark([string]$ClaimedAt, [switch]$KeepCwd) {
+    $old = Read-ActiveMark
+    $cwd = if ($KeepCwd -and $old -and $old.PSObject.Properties['cwd'] -and $old.cwd) { [string]$old.cwd } else { $Cwd }
+    $at = if (-not $ClaimedAt -and $old -and $old.PSObject.Properties['claimedAt']) { [string]$old.claimedAt } else { $ClaimedAt }
+    $active = [ordered]@{ task = $Task; project = $file.Directory.Parent.Name; file = $rel; agentId = $me; cwd = $cwd; claimedAt = $at }
+    if ($session) { $active.sessionId = $session.SessionId; $active.pid = $session.Pid; $active.processStart = $session.ProcessStart }
+    New-Item -ItemType Directory -Force $activeDir | Out-Null
+    Write-LoopText $activeFile ($active | ConvertTo-Json)
+}
 
 function Test-Assignee([string]$Assignee) {
     if ($IgnoreAssignee -or -not $Assignee -or $Assignee -eq 'any') { return $true }
@@ -67,6 +102,7 @@ if ($Action -in @('claim', 'takeover')) {
             $stale = if ($null -ne $age -and $age -gt $cfg.leaseHours) { "（最後の印から $age 時間。lease $($cfg.leaseHours) 時間を超過。引き継ぐには利用者の指示を得て takeover）" } else { "（最後の印から $age 時間）" }
             Stop-With 2 "NG $Task は $owner が担当中 $stale"
         }
+        if ($owner -eq $me -and $Action -eq 'claim') { Assert-SessionOwner }
 
         $now = Get-NowIso
         $msg = if ($owner -and $owner -ne $me) { "takeover（$owner から引き継ぎ）" } elseif ($owner -eq $me) { 'claim（継続）' } else { 'claim' }
@@ -96,9 +132,7 @@ if ($Action -in @('claim', 'takeover')) {
             }
         }
         if ($pushed) {
-            New-Item -ItemType Directory -Force $activeDir | Out-Null
-            $active = [ordered]@{ task = $Task; project = $file.Directory.Parent.Name; file = $rel; agentId = $me; cwd = $Cwd; claimedAt = $now }
-            Write-LoopText $activeFile ($active | ConvertTo-Json)
+            Write-ActiveMark $now
             $where = if ($remote) { 'push 済み' } else { 'リモート無し（ローカルだけ）' }
             Stop-With 0 "OK $Task を $me が担当（$where）: $($file.FullName)"
         }
@@ -106,7 +140,8 @@ if ($Action -in @('claim', 'takeover')) {
     Stop-With 1 "NG 3 回試したが push できない: $last"
 }
 
-# heartbeat / release: 自分の主張が生きていることを、リモートの版でも確かめる
+# heartbeat / release: 同じ PC の別のセッションが担当していないか。自分の主張が生きていることを、リモートの版でも確かめる
+Assert-SessionOwner
 $remote = Get-ControlRemote $cfg
 if ($remote) {
     $branch = Get-ControlBranch $cfg
@@ -134,6 +169,7 @@ if ($Action -eq 'heartbeat') {
     if ($Status) { $text = Set-FrontMatterValue $text 'status' $Status }
     if ($Note -or $Status) { $text = Add-TaskLogLine $text $me ("checkpoint" + $(if ($Status) { "（$Status）" }) + $(if ($Note) { ": $Note" })) }
     Write-LoopText $file.FullName $text
+    if ($session) { Write-ActiveMark '' -KeepCwd }
     $s = Sync-ControlRepo $cfg "[$me] checkpoint $Task$(if ($Note) { ": $Note" })"
     if (-not $s.Ok) { Stop-With 1 "NG 状態は手元に書いたが送れていない（$($s.Reason)）: $($s.Detail)" }
     Stop-With 0 "OK $Task の状態を記録（$($s.Reason)）"
