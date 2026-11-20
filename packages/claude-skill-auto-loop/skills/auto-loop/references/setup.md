@@ -48,7 +48,12 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
    | `prompt` | 空 | 最初に送る指示（空なら既定の「`/auto-loop next` を実行」） |
 
    起こさなかった理由は `~/.claude/auto-loop/logs/auto-loop.log` の `[kick]` の行に残る
-8. **確かめる。** `pwsh -NoProfile -File <scripts>/preflight.ps1` を実行し、NG があれば直し方を示す
+8. **ダッシュボードも用意する（併せて行う）。** 指令リポジトリをブラウザから見て操作するページ（[aiyzkn/loop-control-dashboard](https://github.com/aiyzkn/loop-control-dashboard)。表示・書き換え・並べ替え・依頼の登録・PR のマージ）。データは置かず、利用者のトークンで指令リポジトリを読み書きする。利用者に、どちらかを確かめる
+   - 指令リポジトリが `aiyzkn/loop-control` → 公開済みのページ <https://aiyzkn.github.io/loop-control-dashboard/> をそのまま使う。トークンの作り方（ページの右上の「トークン」の中、またはダッシュボードの README の「使い方」）を示す
+   - 別の指令リポジトリ → 利用者がダッシュボードをフォークし、`app.js` の `CONFIG`（`org`・`owner`・`repo`）を自分の指令リポジトリに合わせ、GitHub Pages を有効にする（リポジトリの作成・公開の設定は利用者が行う）
+   - **トークンは利用者が作り、ページにだけ入れる。** エージェントは作らない・受け取らない・指令リポジトリに書かない
+   - 2 台目以降の PC では不要（ページは PC に依らない）。PC の状況（`state/pcs/`）をページに出すには、7 の自動起動を有効にする
+9. **確かめる。** `pwsh -NoProfile -File <scripts>/preflight.ps1` を実行し、NG があれば直し方を示す
 
 ## 案件を足すとき
 
@@ -64,4 +69,5 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
 ## してはいけないこと
 
 - リモートのリポジトリの作成・公開範囲の変更を、利用者の指示なしに行わない
+- ダッシュボードのトークン（GitHub の個人用トークン）を、利用者から受け取らない・どこにも書かない
 - 利用者のグローバルの設定（`~/.claude/CLAUDE.md`・`settings.json`・`auto-resume-global` の設定）を、了承なしに書き換えない。タスクスケジューラへの登録（`-EnableKick`）も同じ

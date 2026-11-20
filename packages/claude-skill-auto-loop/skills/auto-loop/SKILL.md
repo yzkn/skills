@@ -26,7 +26,7 @@ description: "ループエンジニアリング（長時間・複数案件の作
 
 | 引数 | 行うこと | 手順 |
 |---|---|---|
-| `setup` | この PC の登録（ID・指令リポジトリ・自動再開との連携） | [references/setup.md](references/setup.md) |
+| `setup` | この PC の登録（ID・指令リポジトリ・自動再開との連携・ダッシュボードの案内） | [references/setup.md](references/setup.md) |
 | `status` | 全案件の状態の要約 | [references/status.md](references/status.md) |
 | `intake` | 起票（受付の整理、直接の依頼の反映） | [references/intake.md](references/intake.md) |
 | `start [タスク ID]` | 担当の主張 → 着手前の確認 → 計画 | [references/start.md](references/start.md) |
