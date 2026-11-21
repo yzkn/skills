@@ -190,6 +190,7 @@ auto-resume.ps1（ログオン時など）
 - `config.json` の `claudePath`・`shellPath`・`terminalPath`（読む）と、`resumePrompt`・`rebootResumePrompt`（`auto-loop` の `install.ps1 -LinkAutoResume` が、利用者の了承のうえで末尾に案内を足す）
 - タスク `ClaudeAutoResumeGlobal-Wake` の次の実行時刻（上限の解除待ちかの判断）
 - 解除時刻の 3 分後（`marginMinutes` の既定）・ログオン / 復帰の 1 分後に再開する、という時刻（`auto-loop` の自動起動は、その後に動く）
+- `state/running/<ID>.json` の `sessionId`・`parentSessionId`・`pid`（`resume-session.ps1` のシェル）・`startedAt`（読む）。`auto-loop` は、再開したセッションが判断待ち・完了になったら、`pid` のシェルの子の `claude` を終わらせる。`resume-session.ps1` は、`claude` が終わると印を消して終わり、ウィンドウが閉じる（この順を変えるときも、`auto-loop` の側を直す）
 
 詳しくはキットの `docs/design.md`「1.1 2 つのスキルの関係」。
 

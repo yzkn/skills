@@ -5,8 +5,9 @@
 .DESCRIPTION
   - claude が動いている間は、PC をスリープさせない（終われば解く）
   - 動いている間は state/kick-running.json を置く（kick.ps1 が、二重に起こさないために見る）
-  - セッションの記録が kick.idleCloseMinutes 分のあいだ書かれなければ、claude を終わらせる（0 なら終わらせない）。
-    対話のセッションは自分では終わらないので、終わらせないと PC が眠れず、次の起動時・スリープ解除時にも起こせない。
+  - 見張り（close-watch.ps1。別のプロセス）を付ける。入力待ちが kick.settledCloseMinutes 分続き、担当したタスクが判断待ち・完了などになった、
+    または記録が kick.idleCloseMinutes 分のあいだ書かれなければ、claude を終わらせる（どちらも 0 なら付けない）。claude が終わると、このスクリプトも終わり、
+    ウィンドウが閉じる。対話のセッションは自分では終わらないので、終わらせないとウィンドウが溜まり、PC も眠れない。
     状態はタスクファイルにあるので、続きは次のセッションが読んで行う
   - claudePath などは auto-resume-global の config.json を使う（無ければ PATH の claude）
 #>
@@ -29,7 +30,6 @@ $kick = Get-KickConfig $cfg
 $utf8 = [Text.UTF8Encoding]::new($false)
 $repo = [string]$cfg.controlRepoPath
 $arHome = if ($env:AUTO_LOOP_AUTO_RESUME_HOME) { $env:AUTO_LOOP_AUTO_RESUME_HOME } else { Join-Path $HOME '.claude/auto-resume-global' }
-$projects = if ($env:AUTO_LOOP_CLAUDE_PROJECTS) { $env:AUTO_LOOP_CLAUDE_PROJECTS } else { Join-Path $HOME '.claude/projects' }
 $arCfg = $null
 try { $arCfg = [IO.File]::ReadAllText((Join-Path $arHome 'config.json'), $utf8) | ConvertFrom-Json } catch { }
 
@@ -97,32 +97,10 @@ $runFile = Join-Path (Get-LoopHome) 'state/kick-running.json'
 [IO.File]::WriteAllText($runFile, ([ordered]@{ sessionId = $SessionId; kind = $Kind; pid = $PID; startedAt = (Get-NowIso) } | ConvertTo-Json), $utf8)
 Write-LoopLog 'kick' "セッションを起動: $Kind session=$SessionId pid=$PID"
 
-# 記録が書かれなくなったら終わらせる見張り
-$watch = $null
-if ($kick.idleCloseMinutes -gt 0 -and $IsWindows) {
-    $watch = Start-ThreadJob -ArgumentList $PID, $SessionId, $projects, ([double]$kick.idleCloseMinutes) -ScriptBlock {
-        param($parent, $sid, $projects, $minutes)
-        $last = Get-Date
-        while ($true) {
-            Start-Sleep -Seconds 60
-            $files = @()
-            foreach ($d in @(Get-ChildItem -LiteralPath $projects -Directory -ErrorAction SilentlyContinue)) {
-                $f = Join-Path $d.FullName "$sid.jsonl"
-                if (Test-Path -LiteralPath $f) {
-                    $files += Get-Item -LiteralPath $f
-                    $sub = Join-Path $d.FullName $sid      # サブエージェントの記録
-                    if (Test-Path -LiteralPath $sub) { $files += @(Get-ChildItem -LiteralPath $sub -Recurse -File -ErrorAction SilentlyContinue) }
-                    break
-                }
-            }
-            foreach ($f in $files) { if ($f.LastWriteTime -gt $last) { $last = $f.LastWriteTime } }
-            if (((Get-Date) - $last).TotalMinutes -ge $minutes) {
-                $kids = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$parent" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'conhost.exe' })
-                foreach ($k in $kids) { & taskkill.exe /PID $k.ProcessId /T /F 2>&1 | Out-Null }
-                return "idle-close（記録が $minutes 分のあいだ書かれなかった）"
-            }
-        }
-    }
+# 判断待ち・完了になった・記録が書かれなくなったら終わらせる見張り（close-watch.ps1。別のプロセスで、ウィンドウを出さない）
+if ($IsWindows -and ($kick.settledCloseMinutes -gt 0 -or $kick.idleCloseMinutes -gt 0)) {
+    try { Start-CloseWatch -SessionId $SessionId -HostPid $PID -Source kick -HostStartedAt (Get-NowIso) | Out-Null }
+    catch { Write-LoopLog 'kick' "見張りを起動できなかった: $($_.Exception.Message)" }
 }
 
 $code = $null
@@ -131,15 +109,10 @@ try {
     $code = $LASTEXITCODE
 }
 finally {
-    $why = ''
-    if ($watch) {
-        if ($watch.State -eq 'Completed') { $why = [string](Receive-Job $watch -ErrorAction SilentlyContinue) }
-        Stop-Job $watch -ErrorAction SilentlyContinue; Remove-Job $watch -Force -ErrorAction SilentlyContinue
-    }
     if (Test-Path -LiteralPath $runFile) { Remove-Item -LiteralPath $runFile -Force -ErrorAction SilentlyContinue }
     if ($IsWindows) {
         [AutoLoopKick.Power]::Release($power)
         [AutoLoopKick.Power]::SetThreadExecutionState([uint32]'0x80000000') | Out-Null
     }
-    Write-LoopLog 'kick' "セッションが終わった: session=$SessionId 終了コード=$code $why"
+    Write-LoopLog 'kick' "セッションが終わった: session=$SessionId 終了コード=$code（見張りが終わらせたときは、理由が close-watch の行にある）"
 }
