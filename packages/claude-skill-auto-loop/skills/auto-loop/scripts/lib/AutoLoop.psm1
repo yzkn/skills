@@ -288,7 +288,7 @@ function Get-KickConfig {
     param($Config)
     $k = [ordered]@{
         enabled              = $false   # install.ps1 -EnableKick で true
-        minIntervalHours     = 4        # 前に起こしてから、次に起こすまでの最短の時間
+        minIntervalHours     = 0.5      # 前に起こしてから、次に起こすまでの最短の時間
         idle                 = $true    # 通常のタスクが無いとき、手が空いたときの作業のために起こすか
         idleMinIntervalHours = 24       # 手が空いたときの作業のために起こす間隔
         busyMinutes          = 15       # 作業中のセッション（入力待ちでないもの）の記録がこの分の内に書かれていれば、起こさない（0 なら見ない）
