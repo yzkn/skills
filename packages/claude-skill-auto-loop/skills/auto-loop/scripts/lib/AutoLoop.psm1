@@ -1089,10 +1089,14 @@ function Get-CloseDecision {
 # シェル・conhost（見張り自身や、裏で動かしているもの）は残す。シェルは claude が終わると後始末をして閉じ、ウィンドウも閉じる
 function Stop-SessionHost {
     param([int]$HostPid)
+    # taskkill は、子の一部を終わらせられないと（すでに終わりかけているものなど）標準エラーに書いて 0 以外で終わる。
+    # ErrorActionPreference = Stop のままだと例外になり、終わらせたのに「閉じた」を記録できない（2026-11-21 に本番で 2 件）
+    $ErrorActionPreference = 'Continue'
     $done = @()
     foreach ($k in @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$HostPid" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('conhost.exe', 'pwsh.exe', 'powershell.exe') -and $_.ProcessId -ne $PID })) {
-        & taskkill.exe /PID $k.ProcessId /T /F 2>&1 | Out-Null
-        $done += "$($k.Name)/$($k.ProcessId)"
+        $null = & taskkill.exe /PID $k.ProcessId /T /F 2>&1
+        $left = Get-Process -Id $k.ProcessId -ErrorAction SilentlyContinue
+        $done += "$($k.Name)/$($k.ProcessId)$(if ($left -and -not $left.HasExited) { '（終わらせられなかった）' })"
     }
     return $done
 }
