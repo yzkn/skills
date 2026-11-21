@@ -296,6 +296,7 @@ function Get-KickConfig {
         settledCloseMinutes  = 5        # 入力待ちがこの分続き、担当したタスクが判断待ち・完了などになったら、セッションとウィンドウを終わらせる（0 なら終わらせない。close-watch.ps1）
         settledCloseResumed  = $true    # auto-resume-global が再開したセッションも、上と同じ条件で終わらせる（auto-loop のタスクに触れたものだけ）
         intervalMinutes      = 0        # この分ごとにも kick.ps1 を起動する（0 なら使わない。15・30 など）。起こすかどうかは同じ判断
+        pollMinutes          = 3        # この分ごとに、ダッシュボードの即時実行の印（state/kick/<ID>.json）を見に行く（kick-poll.ps1。タスク AutoLoopKickPoll。0 なら見ない）
         weeklyAtReset        = $true    # 週の上限の解除時刻（の 6 分後）に、毎週 PC を起こして kick.ps1 を起動する（タスク AutoLoopKickWeekly）
         weeklyResetAt        = ''       # 週の解除の曜日・時刻を手で決める（例 'Thu 08:00'）。空なら、セッションの記録の週の上限の resetsAt から取る
         statusEveryMinutes   = 60       # PC の状況（指令リポジトリの state/pcs/<ID>.json）を、中身が変わらなくてもこの分ごとに書き直す（0 なら書かない）
@@ -611,8 +612,9 @@ function Get-NextWeeklySlot {
 # 自動起動のタスク（タスク スケジューラ）の XML。
 #   Kind 'main'  : AutoLoopKick。ログオン時・スリープ復帰時の 3 分後。IntervalMinutes > 0 なら、その分ごとにも
 #   Kind 'weekly': AutoLoopKickWeekly。WeeklyAt の曜日・時刻に毎週。PC を起こす（WakeToRun）
+#   Kind 'poll'  : AutoLoopKickPoll。IntervalMinutes 分ごとに kick-poll.ps1（KickScript に渡す）。PC は起こさない
 function New-KickTaskXml {
-    param([ValidateSet('main', 'weekly')][string]$Kind, [string]$KickScript, [string]$Shell, [string]$User, [int]$IntervalMinutes = 0, [datetime]$WeeklyAt)
+    param([ValidateSet('main', 'weekly', 'poll')][string]$Kind, [string]$KickScript, [string]$Shell, [string]$User, [int]$IntervalMinutes = 0, [datetime]$WeeklyAt)
     $esc = { param($s) [Security.SecurityElement]::Escape([string]$s) }
     $trigger = if ($Kind -eq 'weekly') { 'weekly' } else { '' }
     $argsText = "--headless `"$Shell`" -NoProfile -ExecutionPolicy Bypass -File `"$KickScript`"$(if ($trigger) { " -Trigger $trigger" })"
@@ -647,6 +649,20 @@ function New-KickTaskXml {
     </TimeTrigger>
 "@
         }
+    }
+    elseif ($Kind -eq 'poll') {
+        $desc = "auto-loop: $IntervalMinutes 分ごとに、ダッシュボードの即時実行の印を見に行く ($KickScript)"
+        $start = (Get-Date).AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:00')
+        $triggers = @"
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT$([math]::Max(1, $IntervalMinutes))M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>$start</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
+"@
     }
     else {
         $desc = "auto-loop: 週の上限の解除時刻（の 6 分後）に毎週 PC を起こし、やることがあれば Claude Code のセッションを起こす ($KickScript)"
@@ -780,6 +796,42 @@ function Write-PcStatus {
         if ($r.Ok) { return 'written-pushed' } else { return "written-local（push できなかった: $($r.Reason)）" }
     }
     catch { return "failed: $($_.Exception.Message)" }
+}
+
+# 即時実行の印（ダッシュボードが指令リポジトリの state/kick/<agentId>.json に書く）。無い・読めなければ $null
+function Read-KickRequest {
+    param($Config)
+    $file = Join-Path ([string]$Config.controlRepoPath) "state/kick/$([string]$Config.agentId).json"
+    if (-not (Test-Path -LiteralPath $file)) { return $null }
+    try { $j = [IO.File]::ReadAllText($file, $script:Utf8NoBom) | ConvertFrom-Json } catch { $j = $null }
+    $get = { param($n) if ($j -and $j.PSObject.Properties[$n]) { [string]$j.$n } else { '' } }
+    # ConvertFrom-Json は日時の形の文字列を日時に変える。ISO の形に戻す
+    $at = if ($j -and $j.PSObject.Properties['requestedAt'] -and $j.requestedAt -is [datetime]) { ([datetimeoffset]$j.requestedAt).ToString('yyyy-MM-ddTHH:mm:sszzz') } else { & $get 'requestedAt' }
+    return [pscustomobject]@{ requestedAt = $at; by = (& $get 'by'); task = (& $get 'task'); path = $file }
+}
+
+# 即時実行の印を消す（このファイルだけをコミットし、作業ツリーにほかの変更が無いときだけ push する。Write-PcStatus と同じ考え方）。
+# 戻り値: 'removed-pushed' / 'removed-local…' / 'absent' / 'failed: …'
+function Remove-KickRequest {
+    param($Config, [string]$Note = '')
+    $repo = [string]$Config.controlRepoPath
+    $id = [string]$Config.agentId
+    $rel = "state/kick/$id.json"
+    if (-not (Test-Path -LiteralPath (Join-Path $repo $rel))) { return 'absent' }
+    $lock = Enter-ControlLock $Config
+    try {
+        $tracked = (Invoke-Git $repo @('ls-files', '--', $rel)).Text.Trim()
+        if (-not $tracked) { Remove-Item -LiteralPath (Join-Path $repo $rel) -Force; return 'removed-local（コミットされていない印）' }
+        $rm = Invoke-Git $repo @('rm', '-q', '--', $rel)
+        if ($rm.Code -ne 0) { return "failed: rm $($rm.Text.Trim())" }
+        $msg = "[$id] kick-request$(if ($Note) { ": $Note" })"
+        $c = Invoke-Git $repo @('commit', '-m', $msg, '--', $rel)
+        if ($c.Code -ne 0) { return "failed: commit $($c.Text.Trim())" }
+    }
+    finally { Exit-ControlLock $lock }
+    if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) { return 'removed-local' }
+    $r = Sync-ControlRepo $Config -Message "[$id] kick-request"
+    if ($r.Ok) { return 'removed-pushed' } else { return "removed-local（push できなかった: $($r.Reason)）" }
 }
 
 # 週次のタスクの登録時刻を state/kick-weekly.json に書く
@@ -1032,7 +1084,7 @@ function Get-SessionTaskRefs {
 function Get-HeldTasks {
     param($Config, [string[]]$TaskIds, [string[]]$SessionIds)
     $me = [string]$Config.agentId
-    $settled = @('waiting', 'blocked', 'done', 'dropped', 'ready')
+    $settled = @('waiting', 'review', 'blocked', 'done', 'dropped', 'ready')
     try { $all = @(Get-LoopTasks $Config); $marks = @(Get-ActiveMarks) } catch { return $null }
     $held = @(); $seen = @()
     foreach ($id in @($TaskIds)) {

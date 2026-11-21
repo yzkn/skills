@@ -11,7 +11,9 @@
     -KickIntervalMinutes <分>: その分ごとにも kick.ps1 を起動する（kick.intervalMinutes。0 で止める。省くと設定のまま）
     週の上限の解除時刻が分かれば（kick.weeklyAtReset が true のとき）、その 6 分後に毎週 PC を起こして kick.ps1 を起動するタスク
     AutoLoopKickWeekly も登録する。解除時刻が変わったら kick.ps1 が登録し直す
-  - -DisableKick: タスク AutoLoopKick・AutoLoopKickWeekly を消し、kick.enabled を false にする
+    kick.pollMinutes（既定 3）が 0 より大きければ、その分ごとにダッシュボードの即時実行の印を見に行くタスク AutoLoopKickPoll（kick-poll.ps1）も登録する
+    -KickPollMinutes <分>: 見に行く間隔（kick.pollMinutes。0 で止める。省くと設定のまま）
+  - -DisableKick: タスク AutoLoopKick・AutoLoopKickWeekly・AutoLoopKickPoll を消し、kick.enabled を false にする
   スキル・フォルダ・ログの名前は、すべて配布名 auto-loop にそろえてある。
 .EXAMPLE
   pwsh -NoProfile -File install.ps1 -AgentId pc1-claude-main -ControlRepoPath C:\Users\me\Documents\GitHub\loop-control
@@ -24,7 +26,8 @@ param(
     [switch]$LinkAutoResume,
     [switch]$EnableKick,
     [switch]$DisableKick,
-    [int]$KickIntervalMinutes = -1
+    [int]$KickIntervalMinutes = -1,
+    [int]$KickPollMinutes = -1
 )
 $ErrorActionPreference = 'Stop'
 $utf8 = [Text.UTF8Encoding]::new($false)
@@ -72,6 +75,7 @@ if ($EnableKick -or $DisableKick) {
     foreach ($n in $kickDefaults.Keys) { if (-not $k.Contains($n)) { $k[$n] = $kickDefaults[$n] } }
     $k['enabled'] = [bool]$EnableKick
     if ($KickIntervalMinutes -ge 0) { $k['intervalMinutes'] = $KickIntervalMinutes }
+    if ($KickPollMinutes -ge 0) { $k['pollMinutes'] = $KickPollMinutes }
     $cfg['kick'] = $k
 }
 [IO.File]::WriteAllText($cfgPath, ($cfg | ConvertTo-Json -Depth 5), $utf8)
@@ -110,9 +114,10 @@ if ($LinkAutoResume) {
 if ($EnableKick -or $DisableKick) {
     $kickTask = 'AutoLoopKick'
     $weeklyTask = 'AutoLoopKickWeekly'
+    $pollTask = 'AutoLoopKickPoll'
     if (-not $IsWindows) { Write-Output '自動起動: Windows 専用。タスクは登録しない' }
     elseif ($DisableKick) {
-        foreach ($tn in @($kickTask, $weeklyTask)) {
+        foreach ($tn in @($kickTask, $weeklyTask, $pollTask)) {
             if (Get-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue) {
                 Unregister-ScheduledTask -TaskName $tn -Confirm:$false
                 Write-Output "自動起動: タスク $tn を消した（kick.enabled = false）"
@@ -149,6 +154,16 @@ if ($EnableKick -or $DisableKick) {
         elseif (Get-ScheduledTask -TaskName $weeklyTask -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $weeklyTask -Confirm:$false
             Write-Output "自動起動: kick.weeklyAtReset が false なので、タスク $weeklyTask を消した"
+        }
+        # ダッシュボードの即時実行の印を見に行く（kick.pollMinutes 分ごと。PC は起こさない）
+        if ([double]$kc.pollMinutes -gt 0) {
+            $pollScript = Join-Path (Split-Path -Parent $kickScript) 'kick-poll.ps1'
+            Register-ScheduledTask -TaskName $pollTask -Xml (New-KickTaskXml -Kind poll -KickScript $pollScript -Shell $taskShell -User $user -IntervalMinutes ([int]$kc.pollMinutes)) -Force | Out-Null
+            Write-Output "自動起動: タスク $pollTask を登録した（$($kc.pollMinutes) 分ごとに、ダッシュボードの即時実行の印を見に行く: $pollScript）"
+        }
+        elseif (Get-ScheduledTask -TaskName $pollTask -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $pollTask -Confirm:$false
+            Write-Output "自動起動: kick.pollMinutes が 0 なので、タスク $pollTask を消した"
         }
         if (-not (Test-Path -LiteralPath (Join-Path $arHome 'config.json'))) { Write-Output '  → auto-resume-global が導入されていない。導入されるまで、kick.ps1 は何もしない（見送りの理由はログに残る）' }
         Write-Output '  → 判断だけを見る: kick.ps1 -DryRun　止める: install.ps1 -NoCopy -DisableKick'

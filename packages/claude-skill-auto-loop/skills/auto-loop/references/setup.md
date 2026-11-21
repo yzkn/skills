@@ -40,9 +40,10 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
    | `idle` / `idleMinIntervalHours` | `true` / `24` | 通常のタスクが無いとき、手が空いたときの作業のために起こすか・その間隔 |
    | `busyMinutes` | `15` | 手を動かしているセッション（最後の記録が利用者の入力・ツールの結果・ツールの呼び出しで、この分の内に書かれたもの。サブエージェントの記録を含む）があれば、起こさない（共倒れを防ぐ）。入力待ち・指示が無い・上限の解除待ち・この分より長く書かれていないセッションは数えない |
    | `idleCloseMinutes` | `60` | 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（`0` なら終わらせない。その間 PC は眠らず、次も起こせない） |
-   | `settledCloseMinutes` | `5` | 入力待ちがこの分続き、そのセッションが `claim.ps1` で触れたタスクのどれも手に持っていない（判断待ち `waiting`・`blocked`・完了 `done`・`dropped`・解放 `ready`）とき、セッションを終わらせ、ウィンドウを閉じる（`0` なら終わらせない。見張りは `close-watch.ps1`）。起こしたセッションは、何も担当しなかったときも終わらせる |
+   | `settledCloseMinutes` | `5` | 入力待ちがこの分続き、そのセッションが `claim.ps1` で触れたタスクのどれも手に持っていない（判断待ち `waiting`・マージ待ち `review`・`blocked`・完了 `done`・`dropped`・解放 `ready`）とき、セッションを終わらせ、ウィンドウを閉じる（`0` なら終わらせない。見張りは `close-watch.ps1`）。起こしたセッションは、何も担当しなかったときも終わらせる |
    | `settledCloseResumed` | `true` | `auto-resume-global` が再開したセッションにも、上と同じ見張りを付ける（`kick.ps1` が動くたびに、再開中の印 `state/running/<ID>.json` を見て付ける）。`auto-loop` のタスクに触れていない再開のセッションは終わらせない |
    | `intervalMinutes` | `0` | この分ごとにも `kick.ps1` を起動する（`0` なら使わない。`install.ps1 -NoCopy -EnableKick -KickIntervalMinutes 15` で設定とタスクを一緒に変える）。起こすかの判断は同じで、`minIntervalHours` の内は続けて起こさない（間隔の起動を生かすなら、`minIntervalHours` を間隔以下にする。既定の `0.5` は 30 分の間隔に合う） |
+   | `pollMinutes` | `3` | この分ごとに、ダッシュボードの即時実行の印（指令リポジトリの `state/kick/<ID>.json`）を見に行く（`kick-poll.ps1`。タスク `AutoLoopKickPoll`。`git ls-remote` だけの軽い確かめで、先頭が変わったときだけ取り込む。`0` なら見ない。`install.ps1 -NoCopy -EnableKick -KickPollMinutes 3` で設定とタスクを一緒に変える）。印があれば `kick.ps1 -Trigger now` で起こす（`minIntervalHours` は見ない。ほかのセッションが動いている・上限の解除待ちなら印を残して次の見回りでやり直す） |
    | `weeklyAtReset` | `true` | 週の上限の解除時刻の 6 分後に、毎週 PC を起こして `kick.ps1` を起動する（タスク `AutoLoopKickWeekly`。このときは `minIntervalHours` を見ない）。解除時刻が変わったら `kick.ps1` が登録し直す |
    | `weeklyResetAt` | `''` | 週の解除の曜日・時刻を手で決める（例 `Thu 08:00`、`木 8:00`）。空なら、セッションの記録の週の上限（`rateLimitType` が `seven_day` 系）の `resetsAt` から取る（結果は `state/kick-weekly.json`） |
    | `statusEveryMinutes` | `60` | PC の状況（指令リポジトリの `state/pcs/<ID>.json`。判断・理由・セッションの数・次の復帰・週次の起動の時刻・直近 7 日の上限の窓）を、中身が変わらなくてもこの分ごとに書き直す（`0` なら書かない）。このファイルだけをコミットし、作業ツリーにほかの変更が無いときだけ push する。パスは書かない |

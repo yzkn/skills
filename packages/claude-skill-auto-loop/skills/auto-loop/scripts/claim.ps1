@@ -13,13 +13,14 @@
   pwsh -NoProfile -File claim.ps1 claim 20261115-ui-unify
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Note 'A〜B を実装。次は C'
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Status waiting -Note 'E-2 の判断待ち'
+  pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Status review -Note 'MR 4 本を作成。マージ待ち'
   pwsh -NoProfile -File claim.ps1 release 20261115-ui-unify -Status done -Note 'MR 4 本をマージ'
 #>
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('claim', 'heartbeat', 'release', 'takeover')][string]$Action,
     [Parameter(Mandatory, Position = 1)][string]$Task,
     [string]$Project = '',
-    [ValidateSet('', 'ready', 'doing', 'waiting', 'blocked', 'done', 'dropped')][string]$Status = '',
+    [ValidateSet('', 'ready', 'doing', 'waiting', 'review', 'blocked', 'done', 'dropped')][string]$Status = '',
     [string]$Note = '',
     [string]$Cwd = (Get-Location).Path,
     [switch]$IgnoreAssignee,
@@ -186,7 +187,7 @@ if ([string]$fm['claimed_by'] -ne $me) { Stop-With 2 "NG $Task の担当は「$(
 $now = Get-NowIso
 
 if ($Action -eq 'heartbeat') {
-    if ($Status -and $Status -notin @('doing', 'waiting', 'blocked')) { Stop-With 1 'NG heartbeat の -Status は doing / waiting / blocked' }
+    if ($Status -and $Status -notin @('doing', 'waiting', 'review', 'blocked')) { Stop-With 1 'NG heartbeat の -Status は doing / waiting / review / blocked' }
     $text = Set-FrontMatterValue $text 'heartbeat_at' $now
     $text = Set-FrontMatterValue $text 'updated' $now
     if ($Status) { $text = Set-FrontMatterValue $text 'status' $Status }
@@ -200,7 +201,7 @@ if ($Action -eq 'heartbeat') {
 
 if ($Action -eq 'release') {
     $to = if ($Status) { $Status } else { 'ready' }
-    if ($to -notin @('ready', 'done', 'dropped')) { Stop-With 1 'NG release の -Status は ready / done / dropped（判断待ちは heartbeat -Status waiting で担当を保つ）' }
+    if ($to -notin @('ready', 'done', 'dropped')) { Stop-With 1 'NG release の -Status は ready / done / dropped（判断待ちは heartbeat -Status waiting、マージ待ちは heartbeat -Status review で担当を保つ）' }
     $text = Set-FrontMatterValue $text 'claimed_by' ''
     $text = Set-FrontMatterValue $text 'claimed_at' ''
     $text = Set-FrontMatterValue $text 'heartbeat_at' ''
