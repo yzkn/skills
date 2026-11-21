@@ -71,7 +71,7 @@ if ($ControlRepoPath) { $cfg['controlRepoPath'] = [IO.Path]::GetFullPath($Contro
 if ($EnableKick -or $DisableKick) {
     $k = [ordered]@{}
     if ($cfg.Contains('kick') -and $cfg['kick']) { foreach ($p in $cfg['kick'].PSObject.Properties) { $k[$p.Name] = $p.Value } }
-    $kickDefaults = [ordered]@{ enabled = $false; minIntervalHours = 4; idle = $true; idleMinIntervalHours = 24; busyMinutes = 15; idleCloseMinutes = 60; intervalMinutes = 0; pollMinutes = 3; weeklyAtReset = $true; weeklyResetAt = ''; statusEveryMinutes = 60; permissionMode = 'auto'; remoteControl = $true; prompt = '' }
+    $kickDefaults = [ordered]@{ enabled = $false; minIntervalHours = 0.5; idle = $true; idleMinIntervalHours = 24; busyMinutes = 15; idleCloseMinutes = 60; intervalMinutes = 0; weeklyAtReset = $true; weeklyResetAt = ''; statusEveryMinutes = 60; permissionMode = 'auto'; remoteControl = $true; prompt = '' }
     foreach ($n in $kickDefaults.Keys) { if (-not $k.Contains($n)) { $k[$n] = $kickDefaults[$n] } }
     $k['enabled'] = [bool]$EnableKick
     if ($KickIntervalMinutes -ge 0) { $k['intervalMinutes'] = $KickIntervalMinutes }
@@ -137,7 +137,7 @@ if ($EnableKick -or $DisableKick) {
         Register-ScheduledTask -TaskName $kickTask -Xml $xml -Force | Out-Null
         Write-Output "自動起動: タスク $kickTask を登録した（ログオン時・スリープ復帰時の 3 分後$(if ([int]$kc.intervalMinutes -gt 0) { "、$($kc.intervalMinutes) 分ごと" })に $kickScript）"
         if ([int]$kc.intervalMinutes -gt 0 -and [double]$kc.minIntervalHours * 60 -gt [int]$kc.intervalMinutes) {
-            Write-Output "  → 注意: kick.minIntervalHours（$($kc.minIntervalHours) 時間）の内は、起こしたあとに続けて起こさない。間隔の起動を生かすなら、config.json の kick.minIntervalHours を小さくする（例 0.5）"
+            Write-Output "  → 注意: kick.minIntervalHours（$($kc.minIntervalHours) 時間）の内は、起こしたあとに続けて起こさない。間隔の起動を生かすなら、config.json の kick.minIntervalHours を小さくする（例: 間隔が 15 分なら 0.25）"
         }
         # 週の上限の解除時刻（の 6 分後）に毎週
         if ($kc.weeklyAtReset) {
