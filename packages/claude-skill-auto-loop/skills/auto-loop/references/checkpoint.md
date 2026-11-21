@@ -33,7 +33,7 @@
    pwsh -NoProfile -File <scripts>/claim.ps1 heartbeat <タスク ID> -Status waiting -Note '<何を待っているか>'
    ```
 
-   `-Status` は `doing`（既定のまま）/ `waiting`（利用者の判断・承認待ち）/ `blocked`（外部の要因）。待ちが解けたら `-Status doing` で戻す
+   `-Status` は `doing`（既定のまま）/ `waiting`（利用者の判断・承認待ち）/ `review`（PR / MR のマージ待ち）/ `blocked`（外部の要因）。待ちが解けたら `-Status doing` で戻す（ダッシュボードで回答がそろったときは、ダッシュボードが戻している）
 
 3. 結果を確かめる
    - 終了コード 2「主張が失われている」→ **作業を止めて**利用者に報告する（ほかのエージェントが引き継いだ）

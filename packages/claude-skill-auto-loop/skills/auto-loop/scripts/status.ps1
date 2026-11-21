@@ -27,7 +27,7 @@ $tasks = @(Get-LoopTasks $cfg -Project $Project -IncludeArchive:$All)
 if (-not $All) { $tasks = @($tasks | Where-Object { $_.status -notin @('done', 'dropped') }) }
 if ($Mine) { $tasks = @($tasks | Where-Object { $_.claimedBy -eq $me }) }
 
-$order = @{ waiting = 0; blocked = 1; doing = 2; ready = 3; draft = 4; done = 5; dropped = 6 }
+$order = @{ waiting = 0; review = 1; blocked = 2; doing = 3; ready = 4; draft = 5; done = 6; dropped = 7 }
 $rows = foreach ($t in $tasks) {
     $age = Get-AgeHours $t.heartbeat
     $flag = ''
@@ -79,10 +79,10 @@ else {
     $rows | Format-Table -AutoSize -Wrap @{ n = '案件'; e = { $_.project } }, @{ n = 'ID'; e = { $_.id } }, @{ n = '状態'; e = { $_.status } },
     @{ n = '段階'; e = { $_.stage } }, @{ n = '優先'; e = { $_.priority } }, @{ n = '担当'; e = { $_.claimedBy } }, @{ n = '印から(h)'; e = { $_.ageHours } },
     @{ n = '印'; e = { $_.flag } }, @{ n = '件名'; e = { $_.title } } | Out-String -Width 200 | ForEach-Object { $_.TrimEnd() }
-    $urgent = @($rows | Where-Object { $_.priority -eq 'urgent' -and $_.status -in @('ready', 'doing', 'waiting', 'blocked') })
+    $urgent = @($rows | Where-Object { $_.priority -eq 'urgent' -and $_.status -in @('ready', 'doing', 'waiting', 'review', 'blocked') })
     if ($urgent.Count) { Write-Output "緊急（priority: urgent）: $($urgent.Count) 件。担当中のタスクを区切りで中断して、先に行う" }
-    $need = @($rows | Where-Object { $_.status -in @('waiting', 'blocked') })
-    if ($need.Count) { Write-Output "人の対応が要る: $($need.Count) 件（waiting = 判断・承認待ち / blocked = 外部の要因）" }
+    $need = @($rows | Where-Object { $_.status -in @('waiting', 'review', 'blocked') })
+    if ($need.Count) { Write-Output "人の対応が要る: $($need.Count) 件（waiting = 判断・承認待ち / review = マージ待ち / blocked = 外部の要因）" }
     $stale = @($rows | Where-Object { $_.flag -match 'stale' })
     if ($stale.Count) { Write-Output "stale: $($stale.Count) 件（印が $($cfg.leaseHours) 時間より古い。引き継ぎは利用者の指示を得てから）" }
 }

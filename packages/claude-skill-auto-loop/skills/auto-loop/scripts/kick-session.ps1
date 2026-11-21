@@ -13,7 +13,8 @@
 #>
 param(
     [Parameter(Mandatory)][string]$SessionId,
-    [ValidateSet('work', 'idle')][string]$Kind = 'work'
+    [ValidateSet('work', 'idle')][string]$Kind = 'work',
+    [ValidatePattern('^$|^\d{8}-[A-Za-z0-9][A-Za-z0-9-]*$')][string]$Task = ''   # 即時実行で指定されたタスク（kick.ps1 -Trigger now）
 )
 $ErrorActionPreference = 'Stop'
 
@@ -89,12 +90,15 @@ if (-not $prompt) {
     $prompt = 'auto-loop の自動起動です（起動時・スリープ解除時）。auto-loop スキルの next（/auto-loop next）を実行してください。人が見ていない前提で進め、承認が要る操作は行わず、タスクファイルの「承認が要る操作」「利用者への質問と回答」に書いて待ってください。区切りごとに状態を記録し、やることが無くなったら、何をしたかを 1〜2 文で述べて止まってください。'
     if ($Kind -eq 'idle') { $prompt += ' 事前の確認では、着手できる通常のタスクはありませんでした。手が空いたときの作業（指令リポジトリの AGENTS.md 7.5）を 1 件だけ、小さな範囲で行ってください。' }
 }
+if ($Task) {
+    $prompt += " 利用者がダッシュボードから、タスク $Task の即時実行を頼みました。next の優先度の判定（7.1）より先に、このタスクを再開（自分が担当中なら /auto-loop resume）または着手（/auto-loop start $Task）してください。緊急（priority: urgent）のタスクがあるときと、承認の境界（policy.md）は、いつもどおりです。"
+}
 $claudeArgs = @('--session-id', $SessionId)
-if ($kick.remoteControl) { $claudeArgs += @('--remote-control', "auto-loop ($(if ($Kind -eq 'idle') { '手が空いたとき' } else { '自動起動' }) $(Get-Date -Format 'MM/dd HH:mm'))") }
+if ($kick.remoteControl) { $claudeArgs += @('--remote-control', "auto-loop ($(if ($Task) { "即時実行 $Task" } elseif ($Kind -eq 'idle') { '手が空いたとき' } else { '自動起動' }) $(Get-Date -Format 'MM/dd HH:mm'))") }
 $claudeArgs += @('--permission-mode', [string]$kick.permissionMode, $prompt)
 
 $runFile = Join-Path (Get-LoopHome) 'state/kick-running.json'
-[IO.File]::WriteAllText($runFile, ([ordered]@{ sessionId = $SessionId; kind = $Kind; pid = $PID; startedAt = (Get-NowIso) } | ConvertTo-Json), $utf8)
+[IO.File]::WriteAllText($runFile, ([ordered]@{ sessionId = $SessionId; kind = $Kind; task = $Task; pid = $PID; startedAt = (Get-NowIso) } | ConvertTo-Json), $utf8)
 Write-LoopLog 'kick' "セッションを起動: $Kind session=$SessionId pid=$PID"
 
 # 判断待ち・完了になった・記録が書かれなくなったら終わらせる見張り（close-watch.ps1。別のプロセスで、ウィンドウを出さない）

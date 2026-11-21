@@ -25,6 +25,6 @@
 | 状況 | すること |
 |---|---|
 | `propose` で提案を出し、判断を待つ | `heartbeat -Status waiting`（担当は保つ）。判断が来たら、同じタスクで続ける（必要なら `stage` を書き換える） |
-| `implement` で PR / MR を出し、マージは利用者が行う | 完了条件が「PR / MR の作成まで」なら `done`。レビューの指摘に対応する約束なら `waiting` |
+| `implement` で PR / MR を出し、マージは利用者が行う | `heartbeat -Status review`（担当は保つ。マージ待ちとして一覧・ダッシュボードに残る）。マージされたのを実物（`gh pr view <n> --json state`・`glab mr view`）で確かめたら `done` で解放する。利用者がマージせずに閉じた・取りやめると言ったら `dropped` |
 | 続けられない（権限・別の PC でないとできない、など） | 「現在地」に引き継ぎを書き、`release -Status ready`。理由をログに |
 | 取りやめ（利用者の指示） | `release -Status dropped -Note '<理由>'` |
