@@ -56,11 +56,11 @@ $active = @(Get-ActiveMarks)
 $session = Get-CurrentSession
 foreach ($m in $active) {
     $sid = if ($m.PSObject.Properties['sessionId']) { [string]$m.sessionId } else { '' }
-    $mine = [bool]($session -and $sid -and $sid -eq $session.SessionId)
-    $live = if ($sid -and -not $mine) { Test-SessionLive $m } else { $null }
-    $m | Add-Member -NotePropertyName thisSession -NotePropertyValue $mine -Force
+    $isThis = [bool]($session -and $sid -and $sid -eq $session.SessionId)
+    $live = if ($sid -and -not $isThis) { Test-SessionLive $m } else { $null }
+    $m | Add-Member -NotePropertyName thisSession -NotePropertyValue $isThis -Force
     $m | Add-Member -NotePropertyName otherSessionLive -NotePropertyValue ([bool]($live -and $live.Live)) -Force
-    $m | Add-Member -NotePropertyName sessionState -NotePropertyValue $(if ($mine) { 'this' } elseif ($live) { $live.Reason } else { 'no-session' }) -Force
+    $m | Add-Member -NotePropertyName sessionState -NotePropertyValue $(if ($isThis) { 'this' } elseif ($live) { $live.Reason } else { 'no-session' }) -Force
 }
 
 if ($Json) {
