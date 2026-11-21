@@ -15,7 +15,7 @@ description: "ループエンジニアリング（長時間・複数案件の作
 | 　受付 / 名簿 / 承認の境界 / 決まり | `inbox.md` / `roster.md` / `policy.md` / `AGENTS.md` |
 | 　案件の定義 / タスク（= 状態ファイル）/ 完了 | `projects/<案件>/project.md` / `tasks/<ID>.md` / `archive/<ID>.md` |
 | この PC の設定（エージェントの ID・各リポジトリの clone の場所） | `~/.claude/auto-loop/config.json` |
-| この PC で進行中の印（再開のときに使う） | `~/.claude/auto-loop/state/active/<タスク ID>.json` |
+| この PC で進行中の印（再開のときに使う） | `~/.claude/auto-loop/state/active/<案件>--<タスク ID>.json` |
 | セッションをまたいで使う補助ファイル（scratchpad の代わり） | `~/.claude/auto-loop/work/<タスク ID>/` |
 | ログ（何もしなかった理由も残る） | `~/.claude/auto-loop/logs/auto-loop.log` |
 | スクリプト（以下 `<scripts>`） | このスキルの `scripts/`（導入先は `~/.claude/skills/auto-loop/scripts/`） |
@@ -70,5 +70,6 @@ description: "ループエンジニアリング（長時間・複数案件の作
 - スクリプトは PowerShell 7（`pwsh`）で動く。Windows で作成・検証している（macOS / Linux の `pwsh` では未検証）
 - 利用枠の残りは機械的に取れない。並列の委任の前に、利用者に確かめる
 - 起動時・スリープ解除時（と、設定すれば一定間隔・週の上限の解除時刻）の自動起動（`kick.ps1`）は Windows 専用で、`auto-resume-global` が導入済みのときだけ動く。実際のログオン・スリープ復帰・週の解除時刻をまたぐ一連は、実地での確認が要る
+- 自動起動・自動再開したセッションは、入力待ちになり、担当したタスクが判断待ち・完了などになると、見張り（`close-watch.ps1`）が終わらせてウィンドウを閉じる。続きは、回答が届いたあとの自動起動が行う。手で開いたセッションは閉じない
 - 担当の主張は git の push の先着で決める。指令リポジトリにリモートが無い構成では、同じ PC の中でしか効かない
 - Claude Code 以外のエージェントは、スクリプトを使わずに `AGENTS.md` の手順を git で行う（その場合の取り違えは、スクリプトほどは防げない）

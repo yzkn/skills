@@ -50,9 +50,8 @@ $inboxSummary = Get-InboxSummary $cfg
 $inbox = $inboxSummary.Count
 $idle = @(Get-IdleDefinitions $cfg)
 
-$activeDir = Join-Path (Get-LoopHome) 'state/active'
-$active = @()
-if (Test-Path -LiteralPath $activeDir) { $active = @(Get-ChildItem -LiteralPath $activeDir -Filter '*.json' | ForEach-Object { Read-LoopText $_.FullName | ConvertFrom-Json }) }
+# 進行中の印（新旧の名前。同じ案件・同じタスクは 1 つにまとめる。20261121-task-id-collision）
+$active = @(Get-ActiveMarks)
 # 印のセッションの状態（20261120-no-parallel-sessions）。otherSessionLive が true のタスクは、同じ PC の別のセッションが手を動かしているので、再開の候補にしない
 $session = Get-CurrentSession
 foreach ($m in $active) {

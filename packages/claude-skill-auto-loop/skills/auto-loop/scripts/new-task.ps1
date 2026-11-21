@@ -37,8 +37,18 @@ if (-not $Slug) { $Slug = 'task' }
 if ($Slug.Length -gt 40) { $Slug = $Slug.Substring(0, 40).Trim('-') }
 
 $base = '{0}-{1}' -f (Get-Date).ToString('yyyyMMdd'), $Slug
+# ID の重なりは、全案件の tasks/・archive/ で見る（ID だけで探す道具があるため。20261121-task-id-collision）
+$projectsDir = Join-Path $repo 'projects'
+function Test-TaskIdUsed([string]$Id) {
+    foreach ($d in @(Get-ChildItem -LiteralPath $projectsDir -Directory)) {
+        foreach ($sub in @('tasks', 'archive')) {
+            if (Test-Path -LiteralPath (Join-Path $d.FullName "$sub/$Id.md")) { return $true }
+        }
+    }
+    return $false
+}
 $id = $base; $n = 2
-while ((Test-Path -LiteralPath (Join-Path $projDir "tasks/$id.md")) -or (Test-Path -LiteralPath (Join-Path $projDir "archive/$id.md"))) { $id = "$base-$n"; $n++ }
+while (Test-TaskIdUsed $id) { $id = "$base-$n"; $n++ }
 
 if ($RequestFile) { $Request = Read-LoopText $RequestFile }
 if (-not $Request) { $Request = '（依頼の原文をここに写す）' }

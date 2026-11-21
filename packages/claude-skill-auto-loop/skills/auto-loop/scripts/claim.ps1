@@ -39,15 +39,36 @@ $me = [string]$cfg.agentId
 $repo = [string]$cfg.controlRepoPath
 try { $file = Find-TaskFile $cfg $Task $Project } catch { Stop-With 1 "NG $($_.Exception.Message)" }
 $rel = Get-RelPath $repo $file.FullName
+$taskProject = $file.Directory.Parent.Name
 $activeDir = Join-Path (Get-LoopHome) 'state/active'
-$activeFile = Join-Path $activeDir "$Task.json"
+# 印の名前に案件を入れる（別の案件の同じ ID と取り合わない。20261121-task-id-collision）。古い版の名前は、中身の案件が合うときだけ読み、書くときに移す
+$activeFile = Get-ActiveMarkPath $taskProject $Task
+$legacyFile = Get-ActiveMarkPath $taskProject $Task -Legacy
 $session = Get-CurrentSession
 # 取り込みから push までを、同じ PC の別のセッションと重ねない（プロセスが終われば放される）
 try { $lock = Enter-ControlLock $cfg } catch { Stop-With 1 "NG $($_.Exception.Message)" }
 
+function Read-MarkFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return (Read-LoopText $Path | ConvertFrom-Json) } catch { return $null }
+}
+
+# 古い名前の印のうち、このタスク（同じ案件）のものか
+function Test-LegacyMarkMine {
+    $m = Read-MarkFile $legacyFile
+    return [bool]($m -and $m.PSObject.Properties['project'] -and [string]$m.project -eq $taskProject)
+}
+
 function Read-ActiveMark {
-    if (-not (Test-Path -LiteralPath $activeFile)) { return $null }
-    try { return (Read-LoopText $activeFile | ConvertFrom-Json) } catch { return $null }
+    $m = Read-MarkFile $activeFile
+    if ($m) { return $m }
+    if (Test-LegacyMarkMine) { return (Read-MarkFile $legacyFile) }
+    return $null
+}
+
+function Remove-ActiveMark {
+    if (Test-Path -LiteralPath $activeFile) { Remove-Item -LiteralPath $activeFile -Force }
+    if (Test-LegacyMarkMine) { Remove-Item -LiteralPath $legacyFile -Force }
 }
 
 # 印のセッションが、いまのセッションと違い、まだ生きて手を動かしていれば止める（20261120-no-parallel-sessions）
@@ -68,10 +89,12 @@ function Write-ActiveMark([string]$ClaimedAt, [switch]$KeepCwd) {
     $old = Read-ActiveMark
     $cwd = if ($KeepCwd -and $old -and $old.PSObject.Properties['cwd'] -and $old.cwd) { [string]$old.cwd } else { $Cwd }
     $at = if (-not $ClaimedAt -and $old -and $old.PSObject.Properties['claimedAt']) { [string]$old.claimedAt } else { $ClaimedAt }
-    $active = [ordered]@{ task = $Task; project = $file.Directory.Parent.Name; file = $rel; agentId = $me; cwd = $cwd; claimedAt = $at }
+    $active = [ordered]@{ task = $Task; project = $taskProject; file = $rel; agentId = $me; cwd = $cwd; claimedAt = $at }
     if ($session) { $active.sessionId = $session.SessionId; $active.pid = $session.Pid; $active.processStart = $session.ProcessStart }
     New-Item -ItemType Directory -Force $activeDir | Out-Null
     Write-LoopText $activeFile ($active | ConvertTo-Json)
+    # 古い名前の印（同じ案件のもの）は、新しい名前に移したので消す
+    if (Test-LegacyMarkMine) { Remove-Item -LiteralPath $legacyFile -Force }
 }
 
 function Test-Assignee([string]$Assignee) {
@@ -152,7 +175,7 @@ if ($remote) {
         $rfm = Get-FrontMatter $show.Text
         if ([string]$rfm['claimed_by'] -ne $me) {
             # この PC の「進行中の印」も外す（再開のときに、失った担当を続けないように）
-            if (Test-Path -LiteralPath $activeFile) { Remove-Item -LiteralPath $activeFile -Force }
+            Remove-ActiveMark
             Stop-With 2 "NG $Task の担当はリモートでは「$($rfm['claimed_by'])」（自分は $me）。主張が失われている。作業を止めて利用者に報告する"
         }
     }
@@ -193,7 +216,7 @@ if ($Action -eq 'release') {
         if ($mv.Code -ne 0) { Write-LoopLog 'claim' "保管へ移せない: $($mv.Text)" }
     }
     $s = Sync-ControlRepo $cfg "[$me] release $Task ($to)$(if ($Note) { ": $Note" })"
-    if (Test-Path -LiteralPath $activeFile) { Remove-Item -LiteralPath $activeFile -Force }
+    Remove-ActiveMark
     if (-not $s.Ok) { Stop-With 1 "NG 解放を手元に書いたが送れていない（$($s.Reason)）: $($s.Detail)" }
     Stop-With 0 "OK $Task を解放（$to、$($s.Reason)）"
 }
