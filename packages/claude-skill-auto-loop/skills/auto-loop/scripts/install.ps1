@@ -71,7 +71,7 @@ if ($ControlRepoPath) { $cfg['controlRepoPath'] = [IO.Path]::GetFullPath($Contro
 if ($EnableKick -or $DisableKick) {
     $k = [ordered]@{}
     if ($cfg.Contains('kick') -and $cfg['kick']) { foreach ($p in $cfg['kick'].PSObject.Properties) { $k[$p.Name] = $p.Value } }
-    $kickDefaults = [ordered]@{ enabled = $false; minIntervalHours = 0.5; idle = $true; idleMinIntervalHours = 24; busyMinutes = 15; idleCloseMinutes = 60; intervalMinutes = 0; weeklyAtReset = $true; weeklyResetAt = ''; statusEveryMinutes = 60; permissionMode = 'auto'; remoteControl = $true; prompt = '' }
+    $kickDefaults = [ordered]@{ enabled = $false; minIntervalHours = 0.5; idle = $true; idleMinIntervalHours = 24; busyMinutes = 15; idleCloseMinutes = 60; intervalMinutes = 0; pollMinutes = 3; weeklyAtReset = $true; weeklyResetAt = ''; statusEveryMinutes = 60; permissionMode = 'auto'; remoteControl = $true; prompt = '' }
     foreach ($n in $kickDefaults.Keys) { if (-not $k.Contains($n)) { $k[$n] = $kickDefaults[$n] } }
     $k['enabled'] = [bool]$EnableKick
     if ($KickIntervalMinutes -ge 0) { $k['intervalMinutes'] = $KickIntervalMinutes }
