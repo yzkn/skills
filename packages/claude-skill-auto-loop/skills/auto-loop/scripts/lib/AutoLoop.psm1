@@ -850,7 +850,9 @@ function Get-PriorityRank {
     switch ($Priority) { 'urgent' { return 0 } 'solo' { return 1 } 'high' { return 2 } 'low' { return 4 } default { return 3 } }
 }
 
-# 名簿（roster.md）の「AI のアカウント」: エージェントの ID → アカウントの呼び名。空・例（<...>）のままのものは載せない
+# 名簿（roster.md）の「AI のアカウント」: エージェントの ID → アカウントの呼び名。
+# 空・例（<...>）のままの行は、道具が Claude（道具の列か ID の区切りに claude）なら既定の Claude のアカウント（'claude'）とみなす
+# （利用枠は Claude のアカウント単位で共通なので、別の PC でも区別しない。使い分けるときだけ列に書く）。それ以外は載せない
 function Get-RosterAccounts {
     param($Cfg)
     $map = @{}
@@ -861,25 +863,44 @@ function Get-RosterAccounts {
         if ($l -notmatch '^\s*\|') { $cols = $null; continue }
         $cells = @(($l.Trim().Trim('|')) -split '\|' | ForEach-Object { $_.Trim() })
         if (-not $cols) {
-            if ($cells -contains 'ID') { $cols = @{ id = [array]::IndexOf($cells, 'ID'); acct = [array]::IndexOf($cells, 'AI のアカウント') } }
+            if ($cells -contains 'ID') { $cols = @{ id = [array]::IndexOf($cells, 'ID'); acct = [array]::IndexOf($cells, 'AI のアカウント'); tool = [array]::IndexOf($cells, '道具') } }
             continue
         }
-        if ($cells[0] -match '^-+$' -or $cols.acct -lt 0 -or $cols.acct -ge $cells.Count) { continue }
-        $id = $cells[$cols.id].Trim('`'); $acct = $cells[$cols.acct].Trim('`')
-        if ($id -and $acct -and $acct -notmatch '^<.*>$') { $map[$id] = $acct }
+        if ($cells[0] -match '^-+$' -or $cols.id -ge $cells.Count) { continue }
+        $id = $cells[$cols.id].Trim('`')
+        if (-not $id -or $id -match '^<.*>$') { continue }
+        $acct = if ($cols.acct -ge 0 -and $cols.acct -lt $cells.Count) { $cells[$cols.acct].Trim('`') } else { '' }
+        $tool = if ($cols.tool -ge 0 -and $cols.tool -lt $cells.Count) { $cells[$cols.tool] } else { '' }
+        if ($acct -and $acct -notmatch '^<.*>$') { $map[$id] = $acct }
+        elseif (Test-ClaudeAgent $id $tool) { $map[$id] = 'claude' }
     }
     return $map
 }
 
+# Claude のエージェントか（道具の列に Claude、または ID の区切りに claude）
+function Test-ClaudeAgent {
+    param([string]$Id, [string]$Tool = '')
+    return ($Tool -match '(?i)claude') -or ((($Id -split '-') | ForEach-Object { $_.ToLowerInvariant() }) -contains 'claude')
+}
+
+# エージェントのアカウント: 名簿に書いてあればそれ。名簿に無い Claude のエージェントは既定の 'claude'。分からなければ空
+function Get-AgentAccount {
+    param([hashtable]$Map, [string]$Id)
+    if (-not $Id) { return '' }
+    if ($Map.ContainsKey($Id)) { return $Map[$Id] }
+    if (Test-ClaudeAgent $Id) { return 'claude' }
+    return ''
+}
+
 # 同じ Claude アカウントで着手中の緊急・単独のタスク（AGENTS.md 7.3）: priority が urgent / solo で status が doing、
-# 担当が自分か、名簿の「AI のアカウント」が自分と同じエージェント。アカウントが分からなければ自分の担当だけ
+# 担当が自分か、アカウント（Get-AgentAccount）が自分と同じエージェント。アカウントが分からなければ自分の担当だけ
 function Get-ExclusiveTasks {
     param($Cfg, $Tasks, [string]$Me)
     $acct = Get-RosterAccounts $Cfg
-    $mine = if ($acct.ContainsKey($Me)) { $acct[$Me] } else { '' }
+    $mine = Get-AgentAccount $acct $Me
     return @($Tasks | Where-Object {
             $_.priority -in @('urgent', 'solo') -and $_.status -eq 'doing' -and $_.claimedBy -and
-            ($_.claimedBy -eq $Me -or ($mine -and $acct.ContainsKey($_.claimedBy) -and $acct[$_.claimedBy] -eq $mine))
+            ($_.claimedBy -eq $Me -or ($mine -and (Get-AgentAccount $acct $_.claimedBy) -eq $mine))
         })
 }
 
