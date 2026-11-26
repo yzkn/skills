@@ -24,9 +24,13 @@
   判断のたびに、PC の状況を指令リポジトリの state/pcs/<agentId>.json に書く（kick.enabled のときだけ。中身が変わったときか
   kick.statusEveryMinutes 分ごと。このファイルだけをコミットし、ほかの変更が無いときだけ push する。ダッシュボードが読む）。
   PC の状況には、直近 7 日の上限の窓（limits: 種類 five_hour / seven_day・推定の開始・解除時刻・当たったか）も載せる（セッションの記録から。state/kick-limits.json に前回の結果を残し、差分だけ読む）。
+  利用率（usage: fiveHour / sevenDay の usedPercentage・resetsAt と capturedAt。statusline-usage.ps1 が書いた state/usage.json。install.ps1 -CaptureUsage）と、
+  次の復帰（nextWakeAt: 復帰タスクの次の実行 / limitResetAt: セッションの記録の上限の解除）も、見送りの判断より前に調べて載せる。
   即時実行（-Trigger now）: ダッシュボードの「いま実行」「このタスクを実行」が指令リポジトリに書いた印（state/kick/<agentId>.json。
   requestedAt・by・task（任意））を読んで起こす。kick-poll.ps1 が kick.pollMinutes 分ごとに見に行き、印があれば -Trigger now で呼ぶ。
   6 の間隔は見ない。task があれば、そのタスクを再開・着手するよう指示して起こす（7 の「やること」が無くても起こす）。
+  指定のタスクをほかのエージェントが担当している（担当が無く、assignee がほかのエージェントの ID）ときは、見送らずに、そのエージェントの印に回す
+  （エスカレーション。Move-KickRequest。回された依頼は回し直さない。回し先にすでに印があれば上書きしない）。
   起こした・やることが無い・印が古い（24 時間超）など、続けても起こせないときは印を消して push する（結果は PC の状況の lastRequest）。
   ほかのセッションが動いている・上限の解除待ちのときは印を残し、次の見回りでやり直す
   終了コード: 0 = 起こした・見送った / 1 = 設定が読めない
@@ -138,6 +142,20 @@ if ($kick.enabled -or $DryRun) {
     catch { Write-LoopLog 'kick' "上限の窓を集められなかった: $($_.Exception.Message)" }
 }
 
+# 0d. 利用率（5 時間・週）を PC の状況に載せる（statusline-usage.ps1 が書いた state/usage.json。install.ps1 -CaptureUsage で有効。無ければ載せない）
+try {
+    $usage = Read-UsageSnapshot
+    if ($usage) {
+        $script:pcStatus.usage = $usage
+        if ($DryRun) {
+            $fmtU = { param($w) if (-not $w) { return '—' }; "$(if ($null -ne $w.usedPercentage) { "$($w.usedPercentage)%" } else { '?%' })$(if ($w.resetsAt) { "（解除 $($w.resetsAt)）" })" }
+            Write-Output "INFO 利用率: 5 時間 $(& $fmtU $usage.fiveHour)・週 $(& $fmtU $usage.sevenDay)（$($usage.capturedAt) の値）"
+        }
+    }
+    elseif ($DryRun) { Write-Output 'INFO 利用率: 記録なし（install.ps1 -CaptureUsage でステータスラインから書き出す）' }
+}
+catch { Write-LoopLog 'kick' "利用率を読めなかった: $($_.Exception.Message)" }
+
 # 0c. 即時実行の印を読む（-Trigger now）
 if ($Trigger -eq 'now') {
     $req = Read-KickRequest $cfg
@@ -146,6 +164,26 @@ if ($Trigger -eq 'now') {
     if ($req.task -and $req.task -notmatch '^\d{8}-[A-Za-z0-9][A-Za-z0-9-]*$') { Skip "即時実行の印のタスク ID の形が違う（$($req.task)）" }
     $reqAge = Get-HoursSince ([string]$req.requestedAt)
     if ($null -eq $reqAge -or $reqAge -gt 24) { Skip "即時実行の印が古い・時刻が読めない（$($req.requestedAt)）" }
+    # 0d. 指定のタスクを、ほかのエージェントが担当している（または assignee がほかのエージェントの ID）なら、そのエージェントに回す
+    #     （エスカレーション。見送らない）。この PC が忙しい・無効のときも回す。回された依頼（escalatedFrom あり）は、もう回さない
+    if ($req.task) {
+        $null = Update-ControlRepo $cfg
+        $rt0 = @(Get-LoopTasks $cfg | Where-Object { $_.id -eq [string]$req.task -and $_.status -notin @('done', 'dropped', 'draft') }) | Select-Object -First 1
+        $to = if ($rt0) { Get-KickEscalationTarget -Me $me -Task $rt0 } else { '' }
+        $already = $false
+        try { $already = [bool]([IO.File]::ReadAllText($req.path, $utf8) | ConvertFrom-Json).escalatedFrom } catch { }
+        if ($to -and -not $already) {
+            $what = "即時実行の指定のタスク $($req.task) は $to の担当なので、依頼を $to に回す（エスカレーション）"
+            if ($DryRun) { Write-Output "ESCALATE $to（DryRun。回さない）: $what"; exit 0 }
+            $mr = Move-KickRequest -Config $cfg -Request $req -To $to
+            Write-LoopLog 'kick' "$what。結果: $mr"
+            Write-Output "ESCALATE ${to}: $mr"
+            $script:pcStatus.lastRequest = [ordered]@{ requestedAt = [string]$req.requestedAt; by = [string]$req.by; task = [string]$req.task; handledAt = (Get-NowIso); result = "エスカレーション: $to に回した（$mr）"; kept = $false }
+            $script:request = $null
+            Save-PcStatus 'skip' $what
+            exit 0
+        }
+    }
 }
 
 # 1. 有効か
@@ -157,6 +195,27 @@ $arCfgFile = Join-Path $arHome 'config.json'
 if (-not (Test-Path -LiteralPath $arCfgFile)) { Skip "auto-resume-global が導入されていない（$arCfgFile が無い）" }
 if (Test-Path -LiteralPath (Join-Path $arHome 'disabled')) { Skip 'auto-resume-global が停止中（disabled がある）' }
 $arCfg = [IO.File]::ReadAllText($arCfgFile, $utf8) | ConvertFrom-Json
+
+# 2b. 上限の解除待ち（4・4b で使う）を先に調べ、PC の状況に載せる（3 の「セッションが動いている」で見送るときも、次の復帰を出すため）
+#     復帰タスク ClaudeAutoResumeGlobal-Wake の次の実行（nextWakeAt。先の時刻のときだけ）と、セッションの記録の上限の解除（limitResetAt）
+$wakeAt = $null
+if ($IsWindows -and -not $SkipSystemChecks) {
+    try {
+        $info = Get-ScheduledTaskInfo -TaskName 'ClaudeAutoResumeGlobal-Wake' -ErrorAction Stop
+        if ($info.NextRunTime -and $info.NextRunTime -gt (Get-Date)) { $wakeAt = $info.NextRunTime; $script:pcStatus.nextWakeAt = $wakeAt.ToString('yyyy-MM-ddTHH:mm:sszzz') }
+    }
+    catch { }
+}
+$limit = $null
+if (-not $Force) {
+    try {
+        $margin = if ($arCfg.PSObject.Properties['marginMinutes'] -and $null -ne $arCfg.marginMinutes) { [double]$arCfg.marginMinutes } else { 3 }
+        $limit = Find-PendingLimit -ProjectsDir $projects -MarginMinutes $margin
+    }
+    catch { Write-LoopLog 'kick' "セッションの記録の上限を調べられなかった: $($_.Exception.Message)" }
+    if ($limit) { $script:pcStatus.limitResetAt = $limit.ResetAt.ToString('yyyy-MM-ddTHH:mm:sszzz') }
+}
+if ($DryRun) { Write-Output "INFO 次の復帰: $(if ($wakeAt) { "復帰タスク $($wakeAt.ToString('MM/dd HH:mm'))" } elseif ($limit) { "記録の上限の解除 $($limit.ResetAt.ToString('MM/dd HH:mm'))" } else { 'なし（上限の解除待ちは無い）' })" }
 
 # 2a. auto-resume-global が再開したセッション（state/running/<ID>.json の印）に、判断待ち・完了で終わらせる見張りを付ける。
 #     自動起動のセッションには kick-session.ps1 が付ける。auto-loop のタスクに触れていない再開のセッションは、見張りが終わらせない
@@ -183,34 +242,21 @@ if (-not $SkipSystemChecks) {
             $runState = 'working'
             $runLog = @()
             if ($run.sessionId -and (Test-Path -LiteralPath $projects)) { $runLog = @(Get-ChildItem -LiteralPath $projects -Recurse -File -Filter "$($run.sessionId).jsonl" -ErrorAction SilentlyContinue | Select-Object -First 1) }
-            if ($runLog.Count -gt 0) { $runState = (Get-SessionActivity -Path $runLog[0].FullName -BusyMinutes ([double]$kick.busyMinutes)).State }
+            if ($runLog.Count -gt 0) { $runState = (Get-SessionActivity -Path $runLog[0].FullName -BusyMinutes ([double]$kick.busyMinutes) -LongToolMinutes ([double]$kick.longToolMinutes)).State }
             if ($runState -eq 'working') { Skip "前に起こしたセッションが動いている（pid $($run.pid)、$($run.startedAt) から）" -Retry }
             Write-LoopLog 'kick' "前に起こしたセッションは手が止まっている（$runState、pid $($run.pid)）。数えない"
         }
         elseif (-not $DryRun) { Remove-Item -LiteralPath $runFile -Force -ErrorAction SilentlyContinue }   # 印だけが残っている（再起動など）
     }
 
-    # 4. 上限の解除待ち（いま起こしても、すぐ上限で止まる）
-    if ($IsWindows) {
-        try {
-            $info = Get-ScheduledTaskInfo -TaskName 'ClaudeAutoResumeGlobal-Wake' -ErrorAction Stop
-            if ($info.NextRunTime) { $script:pcStatus.nextWakeAt = $info.NextRunTime.ToString('yyyy-MM-ddTHH:mm:sszzz') }
-            if ($info.NextRunTime -and $info.NextRunTime -gt (Get-Date)) { Skip "上限の解除待ち（復帰タスクが $($info.NextRunTime.ToString('MM/dd HH:mm')) に登録されている）" -Retry }
-        }
-        catch { }
-    }
+    # 4. 上限の解除待ち（いま起こしても、すぐ上限で止まる。復帰タスクの時刻は 2b で読んだ）
+    if ($wakeAt) { Skip "上限の解除待ち（復帰タスクが $($wakeAt.ToString('MM/dd HH:mm')) に登録されている）" -Retry }
 }
 # 4b. 復帰タスクが無くても、セッションの記録に解除されていない上限があれば見送る（手でスリープ解除したとき・auto-resume-global の対象外のセッションなど）。
 #     ファイルだけで判断するので -SkipSystemChecks でも見る。-Force では見ない
+#     解除時刻は 2b で調べた
 if (-not $Force) {
-    $limit = $null
-    try {
-        $margin = if ($arCfg.PSObject.Properties['marginMinutes'] -and $null -ne $arCfg.marginMinutes) { [double]$arCfg.marginMinutes } else { 3 }
-        $limit = Find-PendingLimit -ProjectsDir $projects -MarginMinutes $margin
-    }
-    catch { Write-LoopLog 'kick' "セッションの記録の上限を調べられなかった: $($_.Exception.Message)" }
     if ($limit) {
-        $script:pcStatus.limitResetAt = $limit.ResetAt.ToString('yyyy-MM-ddTHH:mm:sszzz')
         Skip "上限の解除待ち（セッションの記録: $($limit.Kind)、解除 $($limit.ResetAt.ToString('MM/dd HH:mm'))。$($limit.Project) の $($limit.SessionId.Substring(0, [math]::Min(8, $limit.SessionId.Length)))）" -Retry
     }
 }
@@ -222,7 +268,7 @@ if ($kick.busyMinutes -gt 0) {
     $anyClaude = $true
     if (-not $SkipSystemChecks) { $anyClaude = [bool](Get-Process -Name 'claude' -ErrorAction SilentlyContinue | Select-Object -First 1) }
     if ($anyClaude) {
-        $busy = Get-BusySessions -ProjectsDir $projects -BusyMinutes ([double]$kick.busyMinutes)
+        $busy = Get-BusySessions -ProjectsDir $projects -BusyMinutes ([double]$kick.busyMinutes) -LongToolMinutes ([double]$kick.longToolMinutes)
         $counts = [ordered]@{ working = $busy.Working.Count; 'waiting-input' = 0; limit = 0; empty = 0; stale = 0 }
         foreach ($g in @($busy.Idle | Group-Object State)) { $counts[$g.Name] = $g.Count }
         $script:pcStatus.sessions = $counts

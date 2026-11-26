@@ -14,6 +14,10 @@
     kick.pollMinutes（既定 3）が 0 より大きければ、その分ごとにダッシュボードの即時実行の印を見に行くタスク AutoLoopKickPoll（kick-poll.ps1）も登録する
     -KickPollMinutes <分>: 見に行く間隔（kick.pollMinutes。0 で止める。省くと設定のまま）
   - -DisableKick: タスク AutoLoopKick・AutoLoopKickWeekly・AutoLoopKickPoll を消し、kick.enabled を false にする
+  - -CaptureUsage: ~/.claude/settings.json の statusLine.command を statusline-usage.ps1 に置き換え、元のコマンドを config.json の
+    usage.statusLineCommand に控える（表示は元のコマンドのまま）。ステータスラインの JSON の利用率（5 時間・週）が state/usage.json に書かれ、
+    kick.ps1 が PC の状況に載せる（ダッシュボードの PC の表）。settings.json の控えを state/ に取る。グローバルの設定の書き換えなので、利用者の承認のうえで行う
+  - -NoCaptureUsage: statusLine.command を控えた元のコマンドに戻す（控えが空なら statusLine を消す）
   スキル・フォルダ・ログの名前は、すべて配布名 auto-loop にそろえてある。
 .EXAMPLE
   pwsh -NoProfile -File install.ps1 -AgentId pc1-claude-main -ControlRepoPath C:\Users\me\Documents\GitHub\loop-control
@@ -27,7 +31,9 @@ param(
     [switch]$EnableKick,
     [switch]$DisableKick,
     [int]$KickIntervalMinutes = -1,
-    [int]$KickPollMinutes = -1
+    [int]$KickPollMinutes = -1,
+    [switch]$CaptureUsage,
+    [switch]$NoCaptureUsage
 )
 $ErrorActionPreference = 'Stop'
 $utf8 = [Text.UTF8Encoding]::new($false)
@@ -77,6 +83,48 @@ if ($EnableKick -or $DisableKick) {
     if ($KickIntervalMinutes -ge 0) { $k['intervalMinutes'] = $KickIntervalMinutes }
     if ($KickPollMinutes -ge 0) { $k['pollMinutes'] = $KickPollMinutes }
     $cfg['kick'] = $k
+}
+# 利用率の書き出し（頼まれたときだけ。~/.claude/settings.json の statusLine を書き換える）
+if ($CaptureUsage -or $NoCaptureUsage) {
+    $settingsPath = if ($env:AUTO_LOOP_CLAUDE_SETTINGS) { $env:AUTO_LOOP_CLAUDE_SETTINGS } else { Join-Path $HOME '.claude/settings.json' }
+    $wrapper = 'pwsh -NoProfile -File "{0}"' -f ((Join-Path $dest 'scripts/statusline-usage.ps1') -replace '\\', '/')
+    $sRaw = if (Test-Path -LiteralPath $settingsPath) { [IO.File]::ReadAllText($settingsPath, $utf8) } else { '{}' }
+    $s = $sRaw | ConvertFrom-Json
+    $sl = if ($s.PSObject.Properties.Name -contains 'statusLine') { $s.statusLine } else { $null }
+    $curCmd = if ($sl -and $sl.PSObject.Properties.Name -contains 'command') { [string]$sl.command } else { '' }
+    $u = [ordered]@{}
+    if ($cfg.Contains('usage') -and $cfg['usage']) { foreach ($p in $cfg['usage'].PSObject.Properties) { $u[$p.Name] = $p.Value } }
+    $changed = $false
+    if ($CaptureUsage) {
+        if ($curCmd -match 'statusline-usage\.ps1') { Write-Output "利用率: ステータスラインは書き出しを挟んである。何もしない（元のコマンド: $(if ($u['statusLineCommand']) { $u['statusLineCommand'] } else { 'なし' })）" }
+        else {
+            $u['statusLineCommand'] = $curCmd
+            if ($sl) { $sl | Add-Member -NotePropertyName command -NotePropertyValue $wrapper -Force; if (-not ($sl.PSObject.Properties.Name -contains 'type')) { $sl | Add-Member -NotePropertyName type -NotePropertyValue 'command' } }
+            else { $s | Add-Member -NotePropertyName statusLine -NotePropertyValue ([pscustomobject][ordered]@{ type = 'command'; command = $wrapper }) }
+            $changed = $true
+            Write-Output "利用率: ステータスラインに書き出しを挟んだ（$settingsPath。元のコマンド: $(if ($curCmd) { $curCmd } else { 'なし' })。次のセッション・次の更新から効く）"
+        }
+    }
+    else {
+        if ($curCmd -notmatch 'statusline-usage\.ps1') { Write-Output '利用率: ステータスラインに書き出しは挟まっていない。何もしない' }
+        else {
+            $orig = [string]$u['statusLineCommand']
+            if ($orig) { $sl.command = $orig } else { $s.PSObject.Properties.Remove('statusLine') }
+            $u.Remove('statusLineCommand')
+            $changed = $true
+            Write-Output "利用率: ステータスラインを元に戻した（$(if ($orig) { $orig } else { 'statusLine を消した' })）"
+        }
+    }
+    if ($changed) {
+        if (Test-Path -LiteralPath $settingsPath) {
+            $sBackup = Join-Path $loopHome ('state/claude-settings.{0}.json' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
+            [IO.File]::WriteAllText($sBackup, $sRaw, $utf8)
+            Write-Output "  控え: $sBackup"
+        }
+        New-Item -ItemType Directory -Force (Split-Path -Parent $settingsPath) | Out-Null
+        [IO.File]::WriteAllText($settingsPath, (($s | ConvertTo-Json -Depth 32) + "`n"), $utf8)
+    }
+    $cfg['usage'] = $u
 }
 [IO.File]::WriteAllText($cfgPath, ($cfg | ConvertTo-Json -Depth 5), $utf8)
 Write-Output "設定: $cfgPath"

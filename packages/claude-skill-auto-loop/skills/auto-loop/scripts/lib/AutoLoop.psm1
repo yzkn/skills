@@ -293,6 +293,9 @@ function Get-KickConfig {
         idleMinIntervalHours = 24       # 手が空いたときの作業のために起こす間隔
         busyMinutes          = 15       # 作業中のセッション（入力待ちでないもの）の記録がこの分の内に書かれていれば、起こさない（0 なら見ない）
         idleCloseMinutes     = 60       # 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（0 なら終わらせない）
+        longToolMinutes      = 240      # ツールを呼び出し中（結果がまだ無い。試験・ビルドなどの長い実行）のセッションは、この分までは動いているとみなす（busyMinutes・idleCloseMinutes を超えても。0 なら busyMinutes だけで見る）
+        keepOpenSkills       = @('long-run')   # このスキルを使ったセッションは、見張り（close-watch.ps1）が終わらせない
+        keepOpenPhrases      = @('終了しないで', '終了させないで', '終わらせないで', '閉じないで', 'keep open', 'keep-open', 'do not close', "don't close")   # 利用者がこう書いたセッションは、見張りが終わらせない
         settledCloseMinutes  = 5        # 入力待ちがこの分続き、担当したタスクが判断待ち・完了などになったら、セッションとウィンドウを終わらせる（0 なら終わらせない。close-watch.ps1）
         settledCloseResumed  = $true    # auto-resume-global が再開したセッションも、上と同じ条件で終わらせる（auto-loop のタスクに触れたものだけ）
         intervalMinutes      = 0        # この分ごとにも kick.ps1 を起動する（0 なら使わない。15・30 など）。起こすかどうかは同じ判断
@@ -352,9 +355,9 @@ function ConvertTo-LocalTime {
 # （last-prompt・ai-title・bridge-session など）を書き足すので、手が止まっていても更新時刻が新しくなる（2026-11-21 に実物で確かめた）。
 # 時刻つきの行が無い記録（古い形・試験）は、ファイルの更新時刻を使う
 function Get-SessionActivity {
-    param([string]$Path, [double]$BusyMinutes = 15)
+    param([string]$Path, [double]$BusyMinutes = 15, [double]$LongToolMinutes = 0)
     $item = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
-    if (-not $item) { return [pscustomobject]@{ State = 'empty'; LastWrite = $null; Path = $Path } }
+    if (-not $item) { return [pscustomobject]@{ State = 'empty'; LastWrite = $null; Path = $Path; PendingTool = $false } }
     $subWrite = $null
     $sub = Join-Path $item.DirectoryName ([IO.Path]::GetFileNameWithoutExtension($item.Name))
     if (Test-Path -LiteralPath $sub) {
@@ -363,6 +366,7 @@ function Get-SessionActivity {
     }
     $state = 'empty'
     $stamp = $null
+    $pending = $false   # 最後が assistant のツールの呼び出しで、結果がまだ無い（ツールの実行中・権限の確認待ち）
     $lines = Read-SessionTailLines $Path
     for ($i = $lines.Count - 1; $i -ge 0; $i--) {
         $l = $lines[$i].TrimEnd("`r")
@@ -384,21 +388,24 @@ function Get-SessionActivity {
         $content = @(if ($r.message -and $r.message.PSObject.Properties['content']) { $r.message.content })
         $tool = @($content | Where-Object { $_ -and $_.PSObject.Properties['type'] -and $_.type -eq 'tool_use' })
         $state = if ($tool.Count -gt 0) { 'working' } else { 'waiting-input' }
+        $pending = $tool.Count -gt 0
         break
     }
     $lastWrite = if ($stamp) { $stamp } else { $item.LastWriteTime }
     if ($subWrite -and $subWrite -gt $lastWrite) { $lastWrite = $subWrite }
-    if ($state -eq 'working' -and ((Get-Date) - $lastWrite).TotalMinutes -gt $BusyMinutes) { $state = 'stale' }
-    return [pscustomobject]@{ State = $state; LastWrite = $lastWrite; Path = $Path }
+    # ツールの実行中は LongToolMinutes まで待つ（試験などの長い実行を、止まっているとみなさない。権限の確認待ちもここに入る）
+    $limitMin = if ($pending -and $LongToolMinutes -gt $BusyMinutes) { $LongToolMinutes } else { $BusyMinutes }
+    if ($state -eq 'working' -and ((Get-Date) - $lastWrite).TotalMinutes -gt $limitMin) { $state = 'stale' }
+    return [pscustomobject]@{ State = $state; LastWrite = $lastWrite; Path = $Path; PendingTool = $pending }
 }
 
 # この PC で「手を動かしている」セッションを数える。BusyMinutes 分の内に書かれた記録（本体かサブエージェント）だけを読む。
 # 戻り値の Working が 1 件以上なら、ほかのセッションが動いている。Idle は数えなかったもの（入力待ちなど）の内訳
 function Get-BusySessions {
-    param([string]$ProjectsDir, [double]$BusyMinutes = 15, [string[]]$ExcludeSessionIds = @())
+    param([string]$ProjectsDir, [double]$BusyMinutes = 15, [string[]]$ExcludeSessionIds = @(), [double]$LongToolMinutes = 0)
     $working = @(); $idle = @()
     if (-not (Test-Path -LiteralPath $ProjectsDir)) { return [pscustomobject]@{ Working = $working; Idle = $idle } }
-    $cutoff = (Get-Date).AddMinutes(-$BusyMinutes)
+    $cutoff = (Get-Date).AddMinutes(-[math]::Max($BusyMinutes, $LongToolMinutes))
     $seen = @{}
     foreach ($d in @(Get-ChildItem -LiteralPath $ProjectsDir -Directory -ErrorAction SilentlyContinue)) {
         foreach ($f in @(Get-ChildItem -LiteralPath $d.FullName -Recurse -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $cutoff })) {
@@ -410,7 +417,7 @@ function Get-BusySessions {
             $sid = [IO.Path]::GetFileNameWithoutExtension($main)
             if ($seen.ContainsKey($main) -or $sid -in $ExcludeSessionIds) { continue }
             $seen[$main] = $true
-            $a = Get-SessionActivity -Path $main -BusyMinutes $BusyMinutes
+            $a = Get-SessionActivity -Path $main -BusyMinutes $BusyMinutes -LongToolMinutes $LongToolMinutes
             $row = [pscustomobject]@{ SessionId = $sid; Project = $d.Name; State = $a.State; LastWrite = $a.LastWrite }
             if ($a.State -eq 'working') { $working += $row } else { $idle += $row }
         }
@@ -834,6 +841,59 @@ function Remove-KickRequest {
     if ($r.Ok) { return 'removed-pushed' } else { return "removed-local（push できなかった: $($r.Reason)）" }
 }
 
+# 即時実行の依頼を、担当すべきエージェントに回す（エスカレーション）。自分の印（state/kick/<自分>.json）を消し、
+# 回し先の印（state/kick/<To>.json）を書く。1 コミットで、作業ツリーにほかの変更が無いときだけ push する。
+# 回し先にすでに印があれば、そちらを残して自分の印だけを消す（上書きしない）。escalatedFrom に回した元を残す（回し直さないため）
+# 戻り値: 'escalated-pushed' / 'escalated-local…' / 'exists-removed…' / 'failed: …'
+function Move-KickRequest {
+    param($Config, $Request, [string]$To)
+    $repo = [string]$Config.controlRepoPath
+    $id = [string]$Config.agentId
+    if ($To -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $To -eq $id) { return "failed: 回し先の ID が使えない（$To）" }
+    $rel = "state/kick/$id.json"
+    $toRel = "state/kick/$To.json"
+    $toPath = Join-Path $repo $toRel
+    if (Test-Path -LiteralPath $toPath) {
+        $r = Remove-KickRequest -Config $Config -Note "$To にすでに依頼があるので、回さずに消した"
+        return "exists-$r"
+    }
+    $lock = Enter-ControlLock $Config
+    try {
+        $body = [ordered]@{ requestedAt = [string]$Request.requestedAt; by = [string]$Request.by; task = [string]$Request.task; escalatedFrom = $id; escalatedAt = (Get-NowIso) }
+        New-Item -ItemType Directory -Force (Split-Path -Parent $toPath) | Out-Null
+        Write-LoopText $toPath (([pscustomobject]$body | ConvertTo-Json) + "`n")
+        $add = Invoke-Git $repo @('add', '--', $toRel)
+        if ($add.Code -ne 0) { return "failed: add $($add.Text.Trim())" }
+        $paths = @($toRel)
+        if ((Invoke-Git $repo @('ls-files', '--', $rel)).Text.Trim()) {
+            $rm = Invoke-Git $repo @('rm', '-q', '--', $rel)
+            if ($rm.Code -ne 0) { return "failed: rm $($rm.Text.Trim())" }
+            $paths += $rel
+        }
+        elseif (Test-Path -LiteralPath (Join-Path $repo $rel)) { Remove-Item -LiteralPath (Join-Path $repo $rel) -Force }
+        $c = Invoke-Git $repo (@('commit', '-m', "[$id] kick-request: $($Request.task) を $To に回した（エスカレーション）", '--') + $paths)
+        if ($c.Code -ne 0) { return "failed: commit $($c.Text.Trim())" }
+    }
+    finally { Exit-ControlLock $lock }
+    if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) { return 'escalated-local' }
+    $r = Sync-ControlRepo $Config -Message "[$id] kick-request"
+    if ($r.Ok) { return 'escalated-pushed' } else { return "escalated-local（push できなかった: $($r.Reason)）" }
+}
+
+# 即時実行で指定されたタスクを、自分が担当できないとき、回し先のエージェントの ID を返す（回せなければ ''）。
+#   担当（claimed_by）がほかのエージェント → その ID
+#   担当が無く、assignee が自分に合わず、エージェントの ID の形（<PC>-<道具>…。ハイフンを含む）→ assignee
+#   道具の名前（claude など）・any・自分に合う・完了などは回さない
+function Get-KickEscalationTarget {
+    param([string]$Me, $Task)
+    if (-not $Task -or $Task.status -in @('done', 'dropped', 'draft')) { return '' }
+    if ($Task.claimedBy) { return $(if ($Task.claimedBy -ne $Me) { [string]$Task.claimedBy } else { '' }) }
+    $a = [string]$Task.assignee
+    if (-not $a -or (Test-LoopAssignee $Me $a)) { return '' }
+    if ($a -match '^[A-Za-z0-9][A-Za-z0-9._]*-[A-Za-z0-9._-]+$') { return $a }
+    return ''
+}
+
 # 週次のタスクの登録時刻を state/kick-weekly.json に書く
 function Set-WeeklyTaskAt {
     param([string]$Iso)
@@ -921,11 +981,11 @@ function Get-InboxSummary {
     return [pscustomobject]@{ Count = $count; Urgent = $urgent }
 }
 
-# 「間隔:」の書き方を日数にする（毎回 = 0、省略・読めないときは 7）
+# 「間隔:」の書き方を日数にする（毎回 = 0、省略・読めないときは 1 = 毎日。2026-11 に週 1 回から変えた）
 function ConvertTo-IntervalDays {
     param([string]$Text)
     $t = ($Text -replace '\s', '')
-    if (-not $t) { return 7 }
+    if (-not $t) { return 1 }
     if ($t -match '毎回') { return 0 }
     if ($t -match '毎日') { return 1 }
     if ($t -match '毎週') { return 7 }
@@ -934,7 +994,7 @@ function ConvertTo-IntervalDays {
     if ($t -match '日(\d+)回') { return 1 }
     if ($t -match '週(\d+)回') { return [math]::Max(1, [int][math]::Floor(7 / [math]::Max(1, [int]$Matches[1]))) }
     if ($t -match '月(\d+)回') { return [math]::Max(1, [int][math]::Floor(30 / [math]::Max(1, [int]$Matches[1]))) }
-    return 7
+    return 1
 }
 
 # inbox.md の「## 手が空いた時に実行するタスク」の定義（### <案件>: <件名>）を読む。
@@ -958,7 +1018,7 @@ function Get-IdleDefinitions {
             if ($head -match '^[（(]停止[）)]') { continue }
             $project = ''; $title = $head
             if ($head -match '^([^:：]+)[:：]\s*(.+)$') { $project = $Matches[1].Trim(); $title = $Matches[2].Trim() }
-            $cur = [pscustomobject]@{ project = $project; title = $title; stage = 'propose'; interval = ''; intervalDays = 7; last = ''; due = $true }
+            $cur = [pscustomobject]@{ project = $project; title = $title; stage = 'propose'; interval = ''; intervalDays = 1; last = ''; due = $true }
             continue
         }
         if (-not $cur) { continue }
@@ -1137,6 +1197,50 @@ function Get-HeldTasks {
     return [pscustomobject]@{ Held = $held; Summary = ($seen -join ' ') }
 }
 
+# セッションを終わらせてはいけない理由（無ければ ''）。セッションの記録（本体。再開元も）から探す:
+#   Skills のスキルを使った（Skill の呼び出しの input.skill。「プラグイン:名前」の名前の部分でも合わせる。/<スキル> と打った記録も）
+#   利用者が Phrases のどれかを書いた（利用者の入力だけ。ツールの結果・自動の通知・サブエージェントは見ない。大文字・小文字は区別しない）
+# 記録の形は Claude Code の内部形式（2026-11 時点）
+function Get-KeepOpenReason {
+    param([string[]]$Paths, [string[]]$Skills = @('long-run'), [string[]]$Phrases = @())
+    $skillSet = @($Skills | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    $phraseSet = @($Phrases | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    if (-not $skillSet.Count -and -not $phraseSet.Count) { return '' }
+    $nameOf = { param($n) $x = ([string]$n).ToLowerInvariant().TrimStart('/'); if ($x.Contains(':')) { $x = $x.Substring($x.LastIndexOf(':') + 1) }; $x }
+    foreach ($p in @($Paths)) {
+        if (-not $p -or -not (Test-Path -LiteralPath $p)) { continue }
+        foreach ($l in (Read-SessionTailLines $p -MaxBytes 64MB)) {
+            if (-not $l.StartsWith('{')) { continue }
+            $isTool = $l.IndexOf('"tool_use"') -ge 0 -and $l.IndexOf('"Skill"') -ge 0
+            $isUser = $l.IndexOf('"type":"user"') -ge 0
+            if (-not $isTool -and -not $isUser) { continue }
+            try { $r = $l | ConvertFrom-Json } catch { continue }
+            if ($r.PSObject.Properties['isSidechain'] -and $r.isSidechain) { continue }
+            $content = if ($r.message -and $r.message.PSObject.Properties['content']) { $r.message.content } else { $null }
+            if ($r.type -eq 'assistant' -and $skillSet.Count) {
+                foreach ($c in @($content)) {
+                    if ($c -and $c.PSObject.Properties['type'] -and $c.type -eq 'tool_use' -and $c.name -eq 'Skill' -and $c.input -and $c.input.PSObject.Properties['skill']) {
+                        $n = & $nameOf $c.input.skill
+                        if ($n -in $skillSet) { return "スキル $($c.input.skill) を使った" }
+                    }
+                }
+            }
+            elseif ($r.type -eq 'user') {
+                if ($r.PSObject.Properties['isMeta'] -and $r.isMeta) { continue }
+                if ($r.PSObject.Properties['origin'] -and $r.origin -and $r.origin.PSObject.Properties['kind'] -and $r.origin.kind -ne 'human') { continue }
+                $text = if ($content -is [string]) { $content } else { (@($content) | Where-Object { $_ -and $_.PSObject.Properties['type'] -and $_.type -eq 'text' } | ForEach-Object { [string]$_.text }) -join "`n" }
+                if (-not $text -or $text -match '^\s*<(task-notification|system-reminder|local-command-stdout)>') { continue }
+                $low = $text.ToLowerInvariant()
+                foreach ($m in [regex]::Matches($low, '<command-name>/?([^<\s]+)</command-name>')) {
+                    if ((& $nameOf $m.Groups[1].Value) -in $skillSet) { return "スキル $($m.Groups[1].Value) を使った" }
+                }
+                foreach ($ph in $phraseSet) { if ($low.Contains($ph)) { return "利用者が「$ph」と書いた" } }
+            }
+        }
+    }
+    return ''
+}
+
 # 見張りの 1 回分の判断。戻り値の Close が true なら終わらせる。Note は見送りの理由・状態（ログ用）
 #   kick（自動起動のセッション）: 記録が idleCloseMinutes 分のあいだ書かれない、
 #                                 または入力待ちが settledCloseMinutes 分続き、手に持っているタスクが無い（何も担当しなかったときも含む）
@@ -1147,14 +1251,22 @@ function Get-CloseDecision {
         [datetime]$WatchStartedAt, [datetime]$Now = (Get-Date))
     $kick = Get-KickConfig $Config
     $main = if (@($TranscriptPaths).Count) { [string]@($TranscriptPaths)[0] } else { '' }
-    $state = 'empty'; $lastWrite = $WatchStartedAt
+    $state = 'empty'; $lastWrite = $WatchStartedAt; $pending = $false
     if ($main -and (Test-Path -LiteralPath $main)) {
-        $a = Get-SessionActivity -Path $main -BusyMinutes ([double]$kick.busyMinutes)
+        $a = Get-SessionActivity -Path $main -BusyMinutes ([double]$kick.busyMinutes) -LongToolMinutes ([double]$kick.longToolMinutes)
         $state = $a.State; if ($a.LastWrite) { $lastWrite = $a.LastWrite }
+        $pending = [bool]$a.PendingTool
     }
     $quiet = ($Now - $lastWrite).TotalMinutes
     $idle = ($Now - $(if ($lastWrite -gt $WatchStartedAt) { $lastWrite } else { $WatchStartedAt })).TotalMinutes
     $r = { param($Close, $Reason) [pscustomobject]@{ Close = [bool]$Close; Reason = $Reason; State = $state } }
+    # long-run などのスキルを使った・利用者が「終了しないで」と書いたセッションは、終わらせない
+    $keep = Get-KeepOpenReason -Paths $TranscriptPaths -Skills @($kick.keepOpenSkills) -Phrases @($kick.keepOpenPhrases)
+    if ($keep) { return (& $r $false "keep-open（$keep。状態 $state）") }
+    # ツールの実行中（試験などの長い実行）は、longToolMinutes までは「書かれない」で終わらせない
+    if ($pending -and [double]$kick.longToolMinutes -gt 0 -and $quiet -lt [double]$kick.longToolMinutes) {
+        return (& $r $false ('tool-running（ツールの実行中 {0:0} 分。longToolMinutes = {1}）' -f $quiet, $kick.longToolMinutes))
+    }
     if ($Source -eq 'kick' -and [double]$kick.idleCloseMinutes -gt 0 -and $idle -ge [double]$kick.idleCloseMinutes) {
         return (& $r $true "idle-close（記録が $($kick.idleCloseMinutes) 分のあいだ書かれなかった。状態 $state）")
     }
@@ -1248,6 +1360,58 @@ function Exit-ControlLock {
     if (-not $Lock) { return }
     try { $Lock.ReleaseMutex() } catch { }
     $Lock.Dispose()
+}
+
+# ---- 利用率（5 時間・週）。Claude Code のステータスラインに渡る JSON の rate_limits（Pro・Max の契約で、最初の応答のあとだけ出る）から ----
+# statusline-usage.ps1 が state/usage.json に書き、kick.ps1 が PC の状況（usage）に載せる。ダッシュボードが PC の表に出す
+function Get-UsageFile { return (Join-Path (Get-LoopHome) 'state/usage.json') }
+
+function ConvertTo-UsageSnapshot {
+    param($StatusJson, [datetime]$Now = (Get-Date))
+    if (-not $StatusJson -or -not ($StatusJson.PSObject.Properties.Name -contains 'rate_limits') -or -not $StatusJson.rate_limits) { return $null }
+    $rl = $StatusJson.rate_limits
+    $snap = [ordered]@{ capturedAt = $Now.ToString('yyyy-MM-ddTHH:mm:sszzz') }
+    foreach ($pair in @(@('five_hour', 'fiveHour'), @('seven_day', 'sevenDay'))) {
+        $w = if ($rl.PSObject.Properties.Name -contains $pair[0]) { $rl.($pair[0]) } else { $null }
+        if (-not $w) { continue }
+        $o = [ordered]@{}
+        if ($w.PSObject.Properties.Name -contains 'used_percentage' -and $null -ne $w.used_percentage) {
+            try { $o.usedPercentage = [math]::Round([double]$w.used_percentage, 1) } catch { }
+        }
+        if ($w.PSObject.Properties.Name -contains 'resets_at' -and $w.resets_at) {
+            try { $o.resetsAt = [DateTimeOffset]::FromUnixTimeSeconds([long][double]$w.resets_at).ToLocalTime().ToString('yyyy-MM-ddTHH:mm:sszzz') } catch { }
+        }
+        if ($o.Count -gt 0) { $snap[$pair[1]] = $o }
+    }
+    if ($snap.Count -le 1) { return $null }
+    return $snap
+}
+
+function Save-UsageSnapshot {
+    param([Parameter(Mandatory)]$Snapshot, [string]$Path = (Get-UsageFile))
+    New-Item -ItemType Directory -Force (Split-Path -Parent $Path) | Out-Null
+    # 書きかけを読まれないよう、一時ファイルに書いてから置き換える（複数のセッションが同時に書いても壊れない）
+    $tmp = "$Path.$PID.tmp"
+    [IO.File]::WriteAllText($tmp, ((([pscustomobject]$Snapshot) | ConvertTo-Json -Depth 4) + "`n"), $script:Utf8NoBom)
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+# 前回の値を読む。値は書いた時点のもの（capturedAt）。解除時刻を過ぎた窓も残す（ダッシュボードが「解除済み」と出す）
+function Read-UsageSnapshot {
+    param([string]$Path = (Get-UsageFile))
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { $j = [IO.File]::ReadAllText($Path, $script:Utf8NoBom) | ConvertFrom-Json } catch { return $null }
+    if (-not $j -or -not $j.capturedAt) { return $null }
+    $o = [ordered]@{ capturedAt = [string]$j.capturedAt }
+    foreach ($k in @('fiveHour', 'sevenDay')) {
+        if (-not ($j.PSObject.Properties.Name -contains $k) -or -not $j.$k) { continue }
+        $w = [ordered]@{}
+        if ($j.$k.PSObject.Properties.Name -contains 'usedPercentage' -and $null -ne $j.$k.usedPercentage) { $w.usedPercentage = [double]$j.$k.usedPercentage }
+        if ($j.$k.PSObject.Properties.Name -contains 'resetsAt' -and $j.$k.resetsAt) { $w.resetsAt = [string]$j.$k.resetsAt }
+        if ($w.Count -gt 0) { $o[$k] = $w }
+    }
+    if ($o.Count -le 1) { return $null }
+    return $o
 }
 
 Export-ModuleMember -Function *

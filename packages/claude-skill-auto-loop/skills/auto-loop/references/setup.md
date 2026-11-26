@@ -39,7 +39,10 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
    | `minIntervalHours` | `0.5` | 前に起こしてから、次に起こすまでの最短の時間 |
    | `idle` / `idleMinIntervalHours` | `true` / `24` | 通常のタスクが無いとき、手が空いたときの作業のために起こすか・その間隔 |
    | `busyMinutes` | `15` | 手を動かしているセッション（最後の記録が利用者の入力・ツールの結果・ツールの呼び出しで、この分の内に書かれたもの。サブエージェントの記録を含む）があれば、起こさない（共倒れを防ぐ）。入力待ち・指示が無い・上限の解除待ち・この分より長く書かれていないセッションは数えない |
-   | `idleCloseMinutes` | `60` | 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（`0` なら終わらせない。その間 PC は眠らず、次も起こせない） |
+   | `idleCloseMinutes` | `60` | 起こしたセッションの記録がこの分のあいだ書かれなければ、終わらせる（`0` なら終わらせない。その間 PC は眠らず、次も起こせない）。ツールの実行中は `longToolMinutes` まで、`keepOpenSkills`・`keepOpenPhrases` に当たるセッションはいつまでも終わらせない |
+   | `longToolMinutes` | `240` | ツールを呼び出し中（結果がまだ無い。試験・ビルドなどの長い実行。権限の確認待ちも同じ形）のセッションは、最後の記録からこの分までは動いているとみなす。`busyMinutes`（ほかのセッションを起こさない）と `idleCloseMinutes`・`settledCloseMinutes`（見張りが終わらせる）の両方に効く（`0` なら `busyMinutes` だけで見る） |
+   | `keepOpenSkills` | `['long-run']` | このスキルを使ったセッション（`Skill` の呼び出し・`/<スキル>` と打った記録）は、見張り（`close-watch.ps1`）が終わらせない |
+   | `keepOpenPhrases` | `['終了しないで', '終了させないで', '終わらせないで', '閉じないで', 'keep open', 'keep-open', 'do not close', "don't close"]` | 利用者がこう書いたセッション（利用者の入力だけを見る。大文字・小文字は区別しない）は、見張りが終わらせない。止めたいときは、ウィンドウを手で閉じる |
    | `settledCloseMinutes` | `5` | 入力待ちがこの分続き、そのセッションが `claim.ps1` で触れたタスクのどれも手に持っていない（判断待ち `waiting`・マージ待ち `review`・`blocked`・完了 `done`・`dropped`・解放 `ready`）とき、セッションを終わらせ、ウィンドウを閉じる（`0` なら終わらせない。見張りは `close-watch.ps1`）。起こしたセッションは、何も担当しなかったときも終わらせる |
    | `settledCloseResumed` | `true` | `auto-resume-global` が再開したセッションにも、上と同じ見張りを付ける（`kick.ps1` が動くたびに、再開中の印 `state/running/<ID>.json` を見て付ける）。`auto-loop` のタスクに触れていない再開のセッションは終わらせない |
    | `intervalMinutes` | `0` | この分ごとにも `kick.ps1` を起動する（`0` なら使わない。`install.ps1 -NoCopy -EnableKick -KickIntervalMinutes 15` で設定とタスクを一緒に変える）。起こすかの判断は同じで、`minIntervalHours` の内は続けて起こさない（間隔の起動を生かすなら、`minIntervalHours` を間隔以下にする。既定の `0.5` は 30 分の間隔に合う） |
@@ -51,6 +54,8 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
    | `prompt` | 空 | 最初に送る指示（空なら既定の「`/auto-loop next` を実行」） |
 
    起こさなかった理由は `~/.claude/auto-loop/logs/auto-loop.log` の `[kick]` の行に残る
+
+   **利用率（5 時間・週）もダッシュボードに出すなら（任意。利用者の承認のうえで）:** `pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -CaptureUsage`。`~/.claude/settings.json` の `statusLine.command` を `statusline-usage.ps1` に置き換え、元のコマンドを `config.json` の `usage.statusLineCommand` に控える（表示は元のまま。グローバルの設定の書き換えなので、了承を得てから行う。戻すときは `-NoCaptureUsage`）。ステータスラインに渡る JSON の `rate_limits`（Pro・Max の契約で、セッションの最初の応答のあとだけ出る）を `state/usage.json` に書き、`kick.ps1` が PC の状況の `usage` に載せる。値は最後にステータスラインが動いた時点のもの（`capturedAt`）
 8. **ダッシュボードも用意する（併せて行う）。** 指令リポジトリをブラウザから見て操作するページ（[aiyzkn/loop-control-dashboard](https://github.com/aiyzkn/loop-control-dashboard)。表示・書き換え・並べ替え・依頼の登録・PR のマージ）。データは置かず、利用者のトークンで指令リポジトリを読み書きする。利用者に、どちらかを確かめる
    - 指令リポジトリが `aiyzkn/loop-control` → 公開済みのページ <https://aiyzkn.github.io/loop-control-dashboard/> をそのまま使う。トークンの作り方（ページの右上の「トークン」の中、またはダッシュボードの README の「使い方」）を示す
    - 別の指令リポジトリ → 利用者がダッシュボードをフォークし、`app.js` の `CONFIG`（`org`・`owner`・`repo`）を自分の指令リポジトリに合わせ、GitHub Pages を有効にする（リポジトリの作成・公開の設定は利用者が行う）
