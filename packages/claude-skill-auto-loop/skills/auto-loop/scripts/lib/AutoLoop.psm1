@@ -37,6 +37,19 @@ function Get-LoopConfig {
 
 function Get-NowIso { return (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz') }
 
+# 時刻を ISO の文字列（yyyy-MM-ddTHH:mm:sszzz）にそろえる。ConvertFrom-Json（PowerShell 7.1。-DateKind が無い）は ISO の文字列を
+# [datetime] に変えてしまい、[string] で戻すと '11/26/2026 23:00:00' になる（ダッシュボードが読めない）。前の版が書いたその形の文字列も直す
+function ConvertTo-IsoText {
+    param($Value)
+    $fmt = 'yyyy-MM-ddTHH:mm:sszzz'
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [datetimeoffset]) { return $Value.ToString($fmt) }
+    if ($Value -is [datetime]) { return ([datetimeoffset]$Value).ToString($fmt) }
+    $s = [string]$Value
+    if (-not $s -or $s -match '^\d{4}-\d{2}-\d{2}T') { return $s }
+    try { return ([datetimeoffset]([datetime]::Parse($s, [Globalization.CultureInfo]::InvariantCulture))).ToString($fmt) } catch { return $s }
+}
+
 function Write-LoopLog {
     param([Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Message)
     try {
@@ -575,7 +588,7 @@ function Update-LimitWindows {
         try {
             $c = Read-LoopText $file | ConvertFrom-Json
             $filesSince = [datetimeoffset]::Parse([string]$c.scannedAt).LocalDateTime.AddMinutes(-5)   # 書き込みの途中だった記録を取りこぼさないよう、少し重ねる
-            $prev = @($c.windows | Where-Object { $_ } | ForEach-Object { [ordered]@{ kind = [string]$_.kind; startsAt = [string]$_.startsAt; resetsAt = [string]$_.resetsAt; hit = [bool]$_.hit } })
+            $prev = @($c.windows | Where-Object { $_ } | ForEach-Object { [ordered]@{ kind = [string]$_.kind; startsAt = (ConvertTo-IsoText $_.startsAt); resetsAt = (ConvertTo-IsoText $_.resetsAt); hit = [bool]$_.hit } })
         }
         catch { $prev = @(); $filesSince = $null }
     }
@@ -1423,12 +1436,12 @@ function Read-UsageSnapshot {
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     try { $j = [IO.File]::ReadAllText($Path, $script:Utf8NoBom) | ConvertFrom-Json } catch { return $null }
     if (-not $j -or -not $j.capturedAt) { return $null }
-    $o = [ordered]@{ capturedAt = [string]$j.capturedAt }
+    $o = [ordered]@{ capturedAt = (ConvertTo-IsoText $j.capturedAt) }
     foreach ($k in @('fiveHour', 'sevenDay')) {
         if (-not ($j.PSObject.Properties.Name -contains $k) -or -not $j.$k) { continue }
         $w = [ordered]@{}
         if ($j.$k.PSObject.Properties.Name -contains 'usedPercentage' -and $null -ne $j.$k.usedPercentage) { $w.usedPercentage = [double]$j.$k.usedPercentage }
-        if ($j.$k.PSObject.Properties.Name -contains 'resetsAt' -and $j.$k.resetsAt) { $w.resetsAt = [string]$j.$k.resetsAt }
+        if ($j.$k.PSObject.Properties.Name -contains 'resetsAt' -and $j.$k.resetsAt) { $w.resetsAt = (ConvertTo-IsoText $j.$k.resetsAt) }
         if ($w.Count -gt 0) { $o[$k] = $w }
     }
     if ($o.Count -le 1) { return $null }
