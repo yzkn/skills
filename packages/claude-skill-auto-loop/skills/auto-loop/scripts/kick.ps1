@@ -14,6 +14,7 @@
        利用者の入力待ち / 上限の解除待ち / kick.busyMinutes 分より長く書かれていない）は数えない（Get-BusySessions）
     6. 前に起こしてから kick.minIntervalHours 時間が過ぎている（週の解除時刻の起動 -Trigger weekly では見ない）
     7. やることがある: 自分が担当の doing（ダッシュボードで回答がそろうと waiting から doing に戻る）/ 回答の届いた waiting・review・blocked / 自分に合う ready / 受付の未整理（work）。
+       同じアカウントのほかのエージェントが緊急・単独のタスクを doing なら、緊急の ready が無い限り起こさない（AGENTS.md 7.3。Get-ExclusiveTasks）。
        どれも無ければ、手が空いたときの作業（idle。kick.idle が true で、前の idle から kick.idleMinIntervalHours 時間が過ぎているとき）
   起こしたセッションは /auto-loop next を実行する（指令リポジトリの AGENTS.md「7. 着手の順」）。
   あわせて、kick.weeklyAtReset が true なら、週の上限の解除時刻（記録の resetsAt か kick.weeklyResetAt）を調べ、
@@ -276,6 +277,23 @@ if ($script:request -and $script:request.task) {
     if ($rt.Count -eq 0) { Skip "即時実行の指定のタスク $($script:request.task) は、自分が着手・再開できるものでない（無い・完了・ほかの担当・assignee が違う）" }
     $reqTask = [string]$script:request.task
     $summary += " 指定=$reqTask"
+}
+
+# 同じアカウントで緊急・単独のタスクが着手中（doing）なら、そのタスクの続きと緊急のほかは起こさない（AGENTS.md 7.3）。
+# 自分の担当なら、起こしたセッションが next でそのタスクを再開する。ほかのエージェントの担当なら、手が止まるまで待つ（印は残す）
+$excl = @(Get-ExclusiveTasks $cfg $tasks $me)
+if ($excl.Count) {
+    $summary += " 緊急・単独の着手中=" + (($excl | ForEach-Object { "$($_.id)($($_.claimedBy))" }) -join ',')
+    $exclMine = @($excl | Where-Object { $_.claimedBy -eq $me })
+    if ($reqTask) {
+        $rp = @($tasks | Where-Object { $_.id -eq $reqTask } | Select-Object -First 1)
+        if (-not (@($excl.id) -contains $reqTask) -and -not ($rp.Count -and $rp[0].priority -eq 'urgent')) {
+            Skip "同じアカウントで緊急・単独のタスクが着手中のため、指定のタスク $reqTask は起こさない（$summary）" -Retry
+        }
+    }
+    elseif ($exclMine.Count -eq 0 -and $urgent -eq 0) {
+        Skip "同じアカウントのほかのエージェントが緊急・単独のタスクを着手中（$summary）" -Retry
+    }
 }
 
 $kind = ''

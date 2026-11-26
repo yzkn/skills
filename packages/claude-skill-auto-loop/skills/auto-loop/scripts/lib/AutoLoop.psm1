@@ -844,10 +844,43 @@ function Set-WeeklyTaskAt {
     Write-LoopText $file (([pscustomobject]$o) | ConvertTo-Json)
 }
 
-# 優先度の順（小さいほど先）。urgent は利用者が指定したときだけ使う。書いていない・知らない値は normal と同じ
+# 優先度の順（小さいほど先）。urgent（緊急）・solo（単独）は利用者が指定したときだけ使う。書いていない・知らない値は normal と同じ
 function Get-PriorityRank {
     param([string]$Priority)
-    switch ($Priority) { 'urgent' { return 0 } 'high' { return 1 } 'low' { return 3 } default { return 2 } }
+    switch ($Priority) { 'urgent' { return 0 } 'solo' { return 1 } 'high' { return 2 } 'low' { return 4 } default { return 3 } }
+}
+
+# 名簿（roster.md）の「AI のアカウント」: エージェントの ID → アカウントの呼び名。空・例（<...>）のままのものは載せない
+function Get-RosterAccounts {
+    param($Cfg)
+    $map = @{}
+    $path = Join-Path ([string]$Cfg.controlRepoPath) 'roster.md'
+    if (-not (Test-Path -LiteralPath $path)) { return $map }
+    $cols = $null
+    foreach ($l in [IO.File]::ReadAllLines($path, $script:Utf8NoBom)) {
+        if ($l -notmatch '^\s*\|') { $cols = $null; continue }
+        $cells = @(($l.Trim().Trim('|')) -split '\|' | ForEach-Object { $_.Trim() })
+        if (-not $cols) {
+            if ($cells -contains 'ID') { $cols = @{ id = [array]::IndexOf($cells, 'ID'); acct = [array]::IndexOf($cells, 'AI のアカウント') } }
+            continue
+        }
+        if ($cells[0] -match '^-+$' -or $cols.acct -lt 0 -or $cols.acct -ge $cells.Count) { continue }
+        $id = $cells[$cols.id].Trim('`'); $acct = $cells[$cols.acct].Trim('`')
+        if ($id -and $acct -and $acct -notmatch '^<.*>$') { $map[$id] = $acct }
+    }
+    return $map
+}
+
+# 同じ Claude アカウントで着手中の緊急・単独のタスク（AGENTS.md 7.3）: priority が urgent / solo で status が doing、
+# 担当が自分か、名簿の「AI のアカウント」が自分と同じエージェント。アカウントが分からなければ自分の担当だけ
+function Get-ExclusiveTasks {
+    param($Cfg, $Tasks, [string]$Me)
+    $acct = Get-RosterAccounts $Cfg
+    $mine = if ($acct.ContainsKey($Me)) { $acct[$Me] } else { '' }
+    return @($Tasks | Where-Object {
+            $_.priority -in @('urgent', 'solo') -and $_.status -eq 'doing' -and $_.claimedBy -and
+            ($_.claimedBy -eq $Me -or ($mine -and $acct.ContainsKey($_.claimedBy) -and $acct[$_.claimedBy] -eq $mine))
+        })
 }
 
 # 同じ優先度の中の順（order。小さいほど先）。書いていない・数でない値は、いちばん後ろ（そのあとは古い順）

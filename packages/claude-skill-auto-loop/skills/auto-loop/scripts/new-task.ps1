@@ -1,4 +1,4 @@
-﻿#requires -Version 7.0
+#requires -Version 7.0
 <#
 .SYNOPSIS
   タスクファイルを、指令リポジトリの templates/task.md から作る（コミットはしない）。
@@ -13,7 +13,7 @@ param(
     [Parameter(Mandatory)][string]$Title,
     [string]$Slug = '',
     [ValidateSet('propose', 'implement', 'merge')][string]$Stage = 'propose',
-    [ValidateSet('low', 'normal', 'high', 'urgent')][string]$Priority = 'normal',   # urgent は利用者が指定したときだけ
+    [ValidateSet('low', 'normal', 'high', 'solo', 'urgent')][string]$Priority = 'normal',   # urgent（緊急）・solo（単独）は利用者が指定したときだけ
     [ValidateSet('inbox', 'direct', 'file', 'idle')][string]$Source = 'direct',     # idle = 手が空いたときの作業
     [string]$Assignee = 'any',
     [string]$Request = '',

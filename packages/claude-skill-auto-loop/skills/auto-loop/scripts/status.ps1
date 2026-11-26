@@ -1,4 +1,4 @@
-﻿#requires -Version 7.0
+#requires -Version 7.0
 <#
 .SYNOPSIS
   指令リポジトリの全案件の状態を短くまとめる（タスクファイルの全文は読まない）。
@@ -24,6 +24,8 @@ $pull = $null
 if (-not $NoPull) { $pull = Update-ControlRepo $cfg }
 
 $tasks = @(Get-LoopTasks $cfg -Project $Project -IncludeArchive:$All)
+# 同じアカウントで着手中の緊急・単独（AGENTS.md 7.3）。-Mine・-Project で絞る前の全体から見る
+$exclusive = @(Get-ExclusiveTasks $cfg @(Get-LoopTasks $cfg) $me | ForEach-Object { [pscustomobject]@{ project = $_.project; id = $_.id; priority = $_.priority; claimedBy = $_.claimedBy; title = $_.title } })
 if (-not $All) { $tasks = @($tasks | Where-Object { $_.status -notin @('done', 'dropped') }) }
 if ($Mine) { $tasks = @($tasks | Where-Object { $_.claimedBy -eq $me }) }
 
@@ -66,7 +68,7 @@ foreach ($m in $active) {
 if ($Json) {
     [pscustomobject]@{
         agentId = $me; controlRepo = $cfg.controlRepoPath; pulled = $(if ($pull) { $pull.Reason } else { 'skipped' })
-        inbox = $inbox; inboxUrgent = $inboxSummary.Urgent; tasks = @($rows | Select-Object * -ExcludeProperty sort, prio); idle = $idle; active = $active
+        inbox = $inbox; inboxUrgent = $inboxSummary.Urgent; tasks = @($rows | Select-Object * -ExcludeProperty sort, prio); idle = $idle; active = $active; exclusive = $exclusive
     } | ConvertTo-Json -Depth 5
     exit 0
 }
@@ -81,6 +83,9 @@ else {
     @{ n = '印'; e = { $_.flag } }, @{ n = '件名'; e = { $_.title } } | Out-String -Width 200 | ForEach-Object { $_.TrimEnd() }
     $urgent = @($rows | Where-Object { $_.priority -eq 'urgent' -and $_.status -in @('ready', 'doing', 'waiting', 'review', 'blocked') })
     if ($urgent.Count) { Write-Output "緊急（priority: urgent）: $($urgent.Count) 件。担当中のタスクを区切りで中断して、先に行う" }
+}
+if ($exclusive.Count) { Write-Output ("緊急・単独の着手中（同じアカウント）: " + (($exclusive | ForEach-Object { "$($_.id)（$($_.priority)、$($_.claimedBy)）" }) -join '、') + "。このタスクの手が止まるまで、ほかの high 以下に着手・再開しない") }
+if ($rows.Count -gt 0) {
     $need = @($rows | Where-Object { $_.status -in @('waiting', 'review', 'blocked') })
     if ($need.Count) { Write-Output "人の対応が要る: $($need.Count) 件（waiting = 判断・承認待ち / review = マージ待ち / blocked = 外部の要因）" }
     $stale = @($rows | Where-Object { $_.flag -match 'stale' })
