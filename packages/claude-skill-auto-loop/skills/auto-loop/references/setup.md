@@ -55,7 +55,7 @@ PC（とエージェント）ごとに 1 回行う。何度行っても安全（
 
    起こさなかった理由は `~/.claude/auto-loop/logs/auto-loop.log` の `[kick]` の行に残る
 
-   **利用率（5 時間・週）もダッシュボードに出すなら（任意。利用者の承認のうえで）:** `pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -CaptureUsage`。`~/.claude/settings.json` の `statusLine.command` を `statusline-usage.ps1` に置き換え、元のコマンドを `config.json` の `usage.statusLineCommand` に控える（表示は元のまま。グローバルの設定の書き換えなので、了承を得てから行う。戻すときは `-NoCaptureUsage`）。ステータスラインに渡る JSON の `rate_limits`（Pro・Max の契約で、セッションの最初の応答のあとだけ出る）を `state/usage.json` に書き、`kick.ps1` が PC の状況の `usage` に載せる。値は最後にステータスラインが動いた時点のもの（`capturedAt`）
+   **利用率（5 時間・週）もダッシュボードに出すなら（任意。利用者の承認のうえで）:** `pwsh -NoProfile -File <scripts>/install.ps1 -NoCopy -CaptureUsage`。`~/.claude/settings.json` の `statusLine.command` を `statusline-usage.ps1` に置き換え、元のコマンドを `config.json` の `usage.statusLineCommand` に控える（表示は元のまま。グローバルの設定の書き換えなので、了承を得てから行う。戻すときは `-NoCaptureUsage`）。ステータスラインに渡る JSON の `rate_limits`（Pro・Max の契約で、セッションの最初の応答のあとだけ出る）を `state/usage.json` に書き、`kick.ps1` が PC の状況の `usage` に載せる。値は最後にステータスラインが動いた時点のもの（`capturedAt`）。5 時間の窓が切れたあと、次の窓が始まるまでは JSON に `five_hour` が出ないので、その間は前の窓の値を残す（ダッシュボードは「解除済み（前の窓 X%）」と出す）
 8. **ダッシュボードも用意する（併せて行う）。** 指令リポジトリをブラウザから見て操作するページ（[aiyzkn/loop-control-dashboard](https://github.com/aiyzkn/loop-control-dashboard)。表示・書き換え・並べ替え・依頼の登録・PR のマージ）。データは置かず、利用者のトークンで指令リポジトリを読み書きする。利用者に、どちらかを確かめる
    - 指令リポジトリが `aiyzkn/loop-control` → 公開済みのページ <https://aiyzkn.github.io/loop-control-dashboard/> をそのまま使う。トークンの作り方（ページの右上の「トークン」の中、またはダッシュボードの README の「使い方」）を示す
    - 別の指令リポジトリ → 利用者がダッシュボードをフォークし、`app.js` の `CONFIG`（`org`・`owner`・`repo`）を自分の指令リポジトリに合わせ、GitHub Pages を有効にする（リポジトリの作成・公開の設定は利用者が行う）

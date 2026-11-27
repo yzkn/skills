@@ -1400,8 +1400,10 @@ function Exit-ControlLock {
 # statusline-usage.ps1 が state/usage.json に書き、kick.ps1 が PC の状況（usage）に載せる。ダッシュボードが PC の表に出す
 function Get-UsageFile { return (Join-Path (Get-LoopHome) 'state/usage.json') }
 
+# 届いた JSON に無い窓（5 時間の窓が切れたあと、次の窓が始まるまでは five_hour が出ない）は、前の値（-Previous。Read-UsageSnapshot の戻り）の
+# その窓を残す。ダッシュボードは解除時刻を過ぎた窓を「解除済み（前の窓 X%）」と出す。届いた窓が 1 つも無ければ $null（前の値をそのまま残す）
 function ConvertTo-UsageSnapshot {
-    param($StatusJson, [datetime]$Now = (Get-Date))
+    param($StatusJson, [datetime]$Now = (Get-Date), $Previous = $null)
     if (-not $StatusJson -or -not ($StatusJson.PSObject.Properties.Name -contains 'rate_limits') -or -not $StatusJson.rate_limits) { return $null }
     $rl = $StatusJson.rate_limits
     $snap = [ordered]@{ capturedAt = $Now.ToString('yyyy-MM-ddTHH:mm:sszzz') }
@@ -1418,6 +1420,13 @@ function ConvertTo-UsageSnapshot {
         if ($o.Count -gt 0) { $snap[$pair[1]] = $o }
     }
     if ($snap.Count -le 1) { return $null }
+    if ($Previous) {
+        foreach ($k in @('fiveHour', 'sevenDay')) {
+            if ($snap.Contains($k)) { continue }
+            $pw = if ($Previous -is [System.Collections.IDictionary]) { $Previous[$k] } elseif ($Previous.PSObject.Properties.Name -contains $k) { $Previous.$k } else { $null }
+            if ($pw) { $snap[$k] = $pw }
+        }
+    }
     return $snap
 }
 
