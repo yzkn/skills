@@ -7,7 +7,8 @@
   ~/.claude/auto-loop/config.json の usage.statusLineCommand に控える（-NoCaptureUsage で戻す）。
     1. 標準入力の JSON（Claude Code が渡す）の rate_limits.five_hour / seven_day の used_percentage（0〜100）と resets_at（epoch 秒）を、
        state/usage.json（capturedAt・fiveHour・sevenDay の usedPercentage・resetsAt）に書く。rate_limits は Pro・Max の契約で、
-       セッションの最初の応答のあとだけ出る。無ければ書かない（前の値を残す）
+       セッションの最初の応答のあとだけ出る。無ければ書かない（前の値を残す）。片方の窓だけが無いとき（5 時間の窓が切れたあと、
+       次の窓が始まるまでは five_hour が出ない）は、その窓だけ前の値を残す（ダッシュボードが「解除済み（前の窓 X%）」と出す）
     2. usage.statusLineCommand があれば、同じ JSON を渡して呼び、その出力をそのまま返す（無ければ何も表示しない）
   kick.ps1 が、この値を PC の状況（state/pcs/<ID>.json の usage）に載せ、ダッシュボードが PC の表に出す。
   失敗しても、表示（2）は続ける。利用枠（トークン）を使わない。
@@ -23,7 +24,7 @@ $raw = [Console]::In.ReadToEnd()
 
 try {
     Import-Module (Join-Path $PSScriptRoot 'lib/AutoLoop.psm1') -Force
-    $snap = ConvertTo-UsageSnapshot ($raw | ConvertFrom-Json)
+    $snap = ConvertTo-UsageSnapshot ($raw | ConvertFrom-Json) -Previous (Read-UsageSnapshot)
     if ($snap) { Save-UsageSnapshot $snap }
 }
 catch { }
