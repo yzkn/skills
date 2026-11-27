@@ -1397,11 +1397,11 @@ function Exit-ControlLock {
 }
 
 # ---- 利用率（5 時間・週）。Claude Code のステータスラインに渡る JSON の rate_limits（Pro・Max の契約で、最初の応答のあとだけ出る）から ----
-# statusline-usage.ps1 が state/usage.json に書き、kick.ps1 が PC の状況（usage）に載せる。ダッシュボードが PC の表に出す
+# statusline-usage.ps1 が state/usage.json に書き、kick.ps1（判断のたび）と kick-poll.ps1（見回りのたび。Update-PcUsage）が PC の状況（usage）に載せる。ダッシュボードが PC の表に出す
 function Get-UsageFile { return (Join-Path (Get-LoopHome) 'state/usage.json') }
 
 # 届いた JSON に無い窓（5 時間の窓が切れたあと、次の窓が始まるまでは five_hour が出ない）は、前の値（-Previous。Read-UsageSnapshot の戻り）の
-# その窓を残す。ダッシュボードは解除時刻を過ぎた窓を「解除済み（前の窓 X%）」と出す。届いた窓が 1 つも無ければ $null（前の値をそのまま残す）
+# その窓を残す。ダッシュボードは解除時刻を過ぎた窓を、読み込み時点の推定（0%）と前の窓の値で出す。届いた窓が 1 つも無ければ $null（前の値をそのまま残す）
 function ConvertTo-UsageSnapshot {
     param($StatusJson, [datetime]$Now = (Get-Date), $Previous = $null)
     if (-not $StatusJson -or -not ($StatusJson.PSObject.Properties.Name -contains 'rate_limits') -or -not $StatusJson.rate_limits) { return $null }
@@ -1439,7 +1439,7 @@ function Save-UsageSnapshot {
     Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 
-# 前回の値を読む。値は書いた時点のもの（capturedAt）。解除時刻を過ぎた窓も残す（ダッシュボードが「解除済み」と出す）
+# 前回の値を読む。値は書いた時点のもの（capturedAt）。解除時刻を過ぎた窓も残す（ダッシュボードが前の窓の値として添える）
 function Read-UsageSnapshot {
     param([string]$Path = (Get-UsageFile))
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
@@ -1455,6 +1455,72 @@ function Read-UsageSnapshot {
     }
     if ($o.Count -le 1) { return $null }
     return $o
+}
+
+# JSON を読む（日時の形の文字列を日時に変えない。PowerShell 7.1 の ConvertFrom-Json は変えてしまい、書き戻すと形が崩れる）
+function Read-JsonKeepText {
+    param([Parameter(Mandatory)][string]$Text)
+    $reader = [Newtonsoft.Json.JsonTextReader]::new([IO.StringReader]::new($Text))
+    $reader.DateParseHandling = [Newtonsoft.Json.DateParseHandling]::None
+    # JObject は列挙できるので、そのまま返すと PowerShell が中身（JProperty）に展開する。カンマで包んで 1 つのまま返す
+    try { return , [Newtonsoft.Json.Linq.JToken]::ReadFrom($reader) } finally { $reader.Close() }
+}
+
+# 利用率の比べる値（窓ごとの % と解除時刻。capturedAt は含めない）。$U は Read-UsageSnapshot の戻りか、JSON の usage（JToken）
+function Get-UsageSignature {
+    param($U)
+    if ($null -eq $U) { return '' }
+    $get = {
+        param($o, [string]$k)
+        if ($null -eq $o) { return $null }
+        if ($o -is [Newtonsoft.Json.Linq.JObject]) { $t = $o[$k]; if ($null -eq $t -or $t.Type -eq [Newtonsoft.Json.Linq.JTokenType]::Null) { return $null }; if ($t -is [Newtonsoft.Json.Linq.JValue]) { return $t.Value } else { return , $t } }
+        if ($o -is [System.Collections.IDictionary]) { if ($o.Contains($k)) { return $o[$k] } else { return $null } }
+        return $null
+    }
+    $parts = foreach ($k in @('fiveHour', 'sevenDay')) {
+        $w = & $get $U $k
+        $p = & $get $w 'usedPercentage'
+        $r = & $get $w 'resetsAt'
+        $pt = if ($null -ne $p) { ([double]$p).ToString('0.###', [Globalization.CultureInfo]::InvariantCulture) } else { '' }
+        $rt = if ($null -ne $r) { [string](ConvertTo-IsoText $r) } else { '' }
+        "$k=$pt@$rt"
+    }
+    return ($parts -join ';')
+}
+
+# 利用率（state/usage.json）だけを、PC の状況（指令リポジトリの state/pcs/<agentId>.json の usage）に反映する。
+# kick-poll.ps1 が見回り（kick.pollMinutes 分ごと）のたびに呼ぶ。kick.ps1 の判断（30 分〜数時間ごと）を待たずに、
+# ステータスラインが書いた今の値をダッシュボードに届けるため（20261128-dashboard-pc-usage-percent）。
+# % か解除時刻が変わったときだけ書く（capturedAt だけの違いでは書かない。コミットを増やさない）。ほかのキー（updatedAt = 最後の判断の時刻を含む）は変えない。
+# 状況のファイルが無いときは作らない（kick.ps1 が作る）。このファイルだけをコミットし、作業ツリーにほかの変更が無いときだけ push する（Write-PcStatus と同じ）。
+# 戻り値: 'written-pushed' / 'written-local…' / 'unchanged' / 'no-usage' / 'no-status' / 'failed: …'
+function Update-PcUsage {
+    param($Config, $Usage = (Read-UsageSnapshot), [switch]$NoWrite)
+    if (-not $Usage) { return 'no-usage' }
+    $repo = [string]$Config.controlRepoPath
+    if (-not $repo -or -not (Test-Path -LiteralPath $repo)) { return 'failed: 指令リポジトリが無い' }
+    $id = [string]$Config.agentId
+    $rel = "state/pcs/$id.json"
+    $file = Join-Path $repo $rel
+    if (-not (Test-Path -LiteralPath $file)) { return 'no-status' }
+    try { $doc = Read-JsonKeepText ([IO.File]::ReadAllText($file, $script:Utf8NoBom)) } catch { return "failed: 状況のファイルが読めない（$($_.Exception.Message)）" }
+    if ($doc -isnot [Newtonsoft.Json.Linq.JObject]) { return 'failed: 状況のファイルがオブジェクトでない' }
+    if ((Get-UsageSignature $doc['usage']) -eq (Get-UsageSignature $Usage)) { return 'unchanged' }
+    if ($NoWrite) { return 'changed（書かない）' }
+    $lock = Enter-ControlLock $Config
+    try {
+        $doc['usage'] = Read-JsonKeepText (([pscustomobject]$Usage) | ConvertTo-Json -Depth 4)
+        $text = $doc.ToString([Newtonsoft.Json.Formatting]::Indented) -replace "`r`n", "`n"
+        Write-LoopText $file ($text + "`n")
+        Invoke-Git $repo @('add', '--', $rel) | Out-Null
+        $c = Invoke-Git $repo @('commit', '-m', "[$id] pc-usage", '--', $rel)
+        if ($c.Code -ne 0) { return "failed: commit $($c.Text.Trim())" }
+    }
+    catch { return "failed: $($_.Exception.Message)" }
+    finally { Exit-ControlLock $lock }
+    if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) { return 'written-local' }
+    $r = Sync-ControlRepo $Config -Message "[$id] pc-usage"
+    if ($r.Ok) { return 'written-pushed' } else { return "written-local（push できなかった: $($r.Reason)）" }
 }
 
 Export-ModuleMember -Function *

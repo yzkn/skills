@@ -56,7 +56,7 @@ inbox.md                     受付（人が追記する）
 roster.md                    エージェントの名簿（PC・道具・アカウント）
 policy.md                    承認の境界（全案件に共通）
 AGENTS.md / CLAUDE.md        エージェント向けの決まり
-templates/                   タスク・案件・委任の指示書・報告のひな形
+templates/                   タスク・案件・委任の指示書・報告のひな形、クラウドの起票の指示（cloud-intake.md）
 projects/<案件>/
   project.md                 案件の定義（リポジトリ・アカウント・検証の方法・落とし穴）
   tasks/<ID>.md              タスク = 状態ファイル（1 タスク 1 ファイル）

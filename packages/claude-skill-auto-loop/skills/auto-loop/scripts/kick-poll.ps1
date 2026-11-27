@@ -5,6 +5,8 @@
 .DESCRIPTION
   タスク AutoLoopKickPoll（install.ps1 -EnableKick で登録。kick.pollMinutes 分ごと。既定 3 分）が起動する。利用枠（トークン）を使わない。
     1. kick.enabled が true で、kick.pollMinutes が 0 より大きい（-DryRun では見ない）
+    1b. 利用率（ステータスラインが書いた state/usage.json）の % か解除時刻が、PC の状況（state/pcs/<agentId>.json の usage）と違えば、
+       usage だけを書き換えて push する（Update-PcUsage。kick.ps1 の判断を待たずに、ダッシュボードに今の値を届ける）
     2. git ls-remote で指令リポジトリの先頭のコミットを見る（軽い）。前に見たものと同じで、手元に印も無ければ、何もせずに終わる（ログも書かない）
     3. 変わっていれば取り込む（作業ツリーに書きかけがあっても autostash で保つ。Update-ControlRepo）
     4. 自分宛ての印があれば、kick.ps1 -Trigger now を別のプロセスで呼ぶ。印を消すか残すかは kick.ps1 が決める
@@ -46,6 +48,12 @@ if ($remote) {
     elseif ($ls.Code -ne 0) { Write-LoopLog 'kick-poll' "指令リポジトリの先頭を見られなかった: $($ls.Text.Trim())" }
 }
 $changed = [bool]($head -and $head -ne $last)
+
+# 1b. 利用率を PC の状況に反映する（先頭が変わっていなくても。変わったときだけ書く）
+$ur = Update-PcUsage $cfg -NoWrite:$DryRun
+if ($DryRun) { Write-Output "INFO 利用率: $ur" }
+elseif ($ur -like 'written-local*' -or $ur -like 'failed*') { Write-LoopLog 'kick-poll' "利用率を PC の状況に反映: $ur" }
+
 if (-not $changed -and -not (Test-Path -LiteralPath $reqFile)) {
     if ($DryRun) { Write-Output "SKIP 指令リポジトリの先頭は前と同じ（$(if ($head) { $head.Substring(0, 7) } else { '不明' })）で、即時実行の印も無い" }
     exit 0
