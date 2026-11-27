@@ -7,6 +7,8 @@
     1. kick.enabled が true で、kick.pollMinutes が 0 より大きい（-DryRun では見ない）
     1b. 利用率（ステータスラインが書いた state/usage.json）の % か解除時刻が、PC の状況（state/pcs/<agentId>.json の usage）と違えば、
        usage だけを書き換えて push する（Update-PcUsage。kick.ps1 の判断を待たずに、ダッシュボードに今の値を届ける）
+    1c. この PC で手を動かしているセッションが担当しているタスク（進行中の印。Get-RunningTasks）が、PC の状況の running と違えば、
+       running だけを書き換えて push する（Update-PcRunning。ダッシュボードの「Claude 実行中」）
     2. git ls-remote で指令リポジトリの先頭のコミットを見る（軽い）。前に見たものと同じで、手元に印も無ければ、何もせずに終わる（ログも書かない）
     3. 変わっていれば取り込む（作業ツリーに書きかけがあっても autostash で保つ。Update-ControlRepo）
     4. 自分宛ての印があれば、kick.ps1 -Trigger now を別のプロセスで呼ぶ。印を消すか残すかは kick.ps1 が決める
@@ -53,6 +55,11 @@ $changed = [bool]($head -and $head -ne $last)
 $ur = Update-PcUsage $cfg -NoWrite:$DryRun
 if ($DryRun) { Write-Output "INFO 利用率: $ur" }
 elseif ($ur -like 'written-local*' -or $ur -like 'failed*') { Write-LoopLog 'kick-poll' "利用率を PC の状況に反映: $ur" }
+
+# 1c. 実行中のタスク（この PC で手を動かしているセッションの担当）を PC の状況の running に反映する（変わったときだけ書く。20261128-status-labels）
+$rr = try { Update-PcRunning $cfg -Running @(Get-RunningTasks -BusyMinutes ([double]$kick.busyMinutes)) -NoWrite:$DryRun } catch { "failed: $($_.Exception.Message)" }
+if ($DryRun) { Write-Output "INFO 実行中のタスク: $rr" }
+elseif ($rr -like 'written-local*' -or $rr -like 'failed*') { Write-LoopLog 'kick-poll' "実行中のタスクを PC の状況に反映: $rr" }
 
 if (-not $changed -and -not (Test-Path -LiteralPath $reqFile)) {
     if ($DryRun) { Write-Output "SKIP 指令リポジトリの先頭は前と同じ（$(if ($head) { $head.Substring(0, 7) } else { '不明' })）で、即時実行の印も無い" }

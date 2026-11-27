@@ -13,6 +13,7 @@
   pwsh -NoProfile -File claim.ps1 claim 20261115-ui-unify
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Note 'A〜B を実装。次は C'
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Status waiting -Note 'E-2 の判断待ち'
+  pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Status waiting -Wait command -Note 'gh auth login の実行を依頼'
   pwsh -NoProfile -File claim.ps1 heartbeat 20261115-ui-unify -Status review -Note 'MR 4 本を作成。マージ待ち'
   pwsh -NoProfile -File claim.ps1 release 20261115-ui-unify -Status done -Note 'MR 4 本をマージ'
 #>
@@ -22,6 +23,8 @@ param(
     [string]$Project = '',
     [ValidateSet('', 'ready', 'doing', 'waiting', 'review', 'blocked', 'done', 'dropped')][string]$Status = '',
     [string]$Note = '',
+    # 利用者の番（waiting）の種類。先頭のキー wait に書く（ダッシュボードが分けて出す）: spec 仕様の確認 / approval 承認 / command コマンドの実行の依頼 / answer 質問への回答
+    [ValidateSet('', 'spec', 'approval', 'command', 'answer')][string]$Wait = '',
     [string]$Cwd = (Get-Location).Path,
     [switch]$IgnoreAssignee,
     [switch]$NoArchive
@@ -135,6 +138,7 @@ if ($Action -in @('claim', 'takeover')) {
         $text = Set-FrontMatterValue $text 'claimed_by' $me
         $text = Set-FrontMatterValue $text 'heartbeat_at' $now
         $text = Set-FrontMatterValue $text 'status' 'doing'
+        if ([string](Get-FrontMatter $text)['wait']) { $text = Set-FrontMatterValue $text 'wait' '' }   # 待ちの種類は waiting の間だけ
         $text = Set-FrontMatterValue $text 'updated' $now
         $text = Add-TaskLogLine $text $me $msg
         Write-LoopText $file.FullName $text
@@ -188,10 +192,16 @@ $now = Get-NowIso
 
 if ($Action -eq 'heartbeat') {
     if ($Status -and $Status -notin @('doing', 'waiting', 'review', 'blocked')) { Stop-With 1 'NG heartbeat の -Status は doing / waiting / review / blocked' }
+    if ($Wait -and $Status -ne 'waiting') { Stop-With 1 'NG -Wait は -Status waiting と一緒に使う' }
     $text = Set-FrontMatterValue $text 'heartbeat_at' $now
     $text = Set-FrontMatterValue $text 'updated' $now
     if ($Status) { $text = Set-FrontMatterValue $text 'status' $Status }
-    if ($Note -or $Status) { $text = Add-TaskLogLine $text $me ("checkpoint" + $(if ($Status) { "（$Status）" }) + $(if ($Note) { ": $Note" })) }
+    # 待ちの種類: waiting にするときは -Wait の値に書き直す（無ければ空 = 種類を決めない）。ほかの状態にするときは前の値を消す。どちらも、要らなければキーを足さない
+    $hadWait = [bool][string](Get-FrontMatter $text)['wait']
+    if ($Status -eq 'waiting' -and ($Wait -or $hadWait)) { $text = Set-FrontMatterValue $text 'wait' $Wait }
+    elseif ($Status -and $Status -ne 'waiting' -and $hadWait) { $text = Set-FrontMatterValue $text 'wait' '' }
+    $what = if ($Status) { "（$Status$(if ($Wait) { "・$Wait" })）" } else { '' }
+    if ($Note -or $Status) { $text = Add-TaskLogLine $text $me ("checkpoint" + $what + $(if ($Note) { ": $Note" })) }
     Write-LoopText $file.FullName $text
     if ($session) { Write-ActiveMark '' -KeepCwd }
     $s = Sync-ControlRepo $cfg "[$me] checkpoint $Task$(if ($Note) { ": $Note" })"
@@ -206,6 +216,7 @@ if ($Action -eq 'release') {
     $text = Set-FrontMatterValue $text 'claimed_at' ''
     $text = Set-FrontMatterValue $text 'heartbeat_at' ''
     $text = Set-FrontMatterValue $text 'status' $to
+    if ([string](Get-FrontMatter $text)['wait']) { $text = Set-FrontMatterValue $text 'wait' '' }
     $text = Set-FrontMatterValue $text 'updated' $now
     $text = Add-TaskLogLine $text $me ("release（$to）" + $(if ($Note) { ": $Note" }))
     Write-LoopText $file.FullName $text

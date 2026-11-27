@@ -1523,4 +1523,57 @@ function Update-PcUsage {
     if ($r.Ok) { return 'written-pushed' } else { return "written-local（push できなかった: $($r.Reason)）" }
 }
 
+# この PC で手を動かしているセッションが担当しているタスク（進行中の印のうち、Test-SessionLive が生きているとみなすもの）。
+# PC の状況（state/pcs/<agentId>.json）の running に書き、ダッシュボードが「Claude 実行中」と出す（20261128-status-labels）。
+# 書くのはタスクの ID と案件だけ（セッションの ID・パス・中身は書かない）。並びは案件 → タスクの ID の順
+function Get-RunningTasks {
+    param([double]$BusyMinutes = 15, [string]$ProjectsDir = (Get-ClaudeProjectsDir))
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($m in @(Get-ActiveMarks)) {
+        if (-not $m -or -not $m.PSObject.Properties['task']) { continue }
+        $live = Test-SessionLive $m -BusyMinutes $BusyMinutes -ProjectsDir $ProjectsDir
+        if (-not $live.Live) { continue }
+        $proj = if ($m.PSObject.Properties['project']) { [string]$m.project } else { '' }
+        $out.Add([ordered]@{ project = $proj; task = [string]$m.task })
+    }
+    # カンマで包まない（呼び出し側が @() で受ける。包むと配列の中に配列ができる）
+    return @($out | Sort-Object { $_.project }, { $_.task })
+}
+
+# 実行中のタスク（Get-RunningTasks）だけを、PC の状況の running に反映する。kick-poll.ps1 が見回りのたびに呼ぶ（Update-PcUsage と同じ考え方）。
+# 並び（案件/タスク）が変わったときだけ書く。ほかのキーは変えない。状況のファイルが無いときは作らない（kick.ps1 が作る）。
+# 戻り値: 'written-pushed' / 'written-local…' / 'unchanged' / 'no-status' / 'changed（書かない）' / 'failed: …'
+function Update-PcRunning {
+    param($Config, $Running = $null, [switch]$NoWrite)
+    if ($null -eq $Running) { $Running = Get-RunningTasks }
+    $repo = [string]$Config.controlRepoPath
+    if (-not $repo -or -not (Test-Path -LiteralPath $repo)) { return 'failed: 指令リポジトリが無い' }
+    $id = [string]$Config.agentId
+    $rel = "state/pcs/$id.json"
+    $file = Join-Path $repo $rel
+    if (-not (Test-Path -LiteralPath $file)) { return 'no-status' }
+    try { $doc = Read-JsonKeepText ([IO.File]::ReadAllText($file, $script:Utf8NoBom)) } catch { return "failed: 状況のファイルが読めない（$($_.Exception.Message)）" }
+    if ($doc -isnot [Newtonsoft.Json.Linq.JObject]) { return 'failed: 状況のファイルがオブジェクトでない' }
+    $sig = { param($list) (@($list) | ForEach-Object { "$($_['project'])/$($_['task'])" }) -join ';' }
+    $old = @()
+    if ($doc['running'] -is [Newtonsoft.Json.Linq.JArray]) { $old = @($doc['running'] | ForEach-Object { @{ project = [string]$_['project']; task = [string]$_['task'] } }) }
+    if ((& $sig $old) -eq (& $sig @($Running))) { return 'unchanged' }
+    if ($NoWrite) { return 'changed（書かない）' }
+    $lock = Enter-ControlLock $Config
+    try {
+        $json = if (@($Running).Count) { ConvertTo-Json -InputObject @($Running) -Depth 3 } else { '[]' }
+        $doc['running'] = Read-JsonKeepText $json
+        $text = $doc.ToString([Newtonsoft.Json.Formatting]::Indented) -replace "`r`n", "`n"
+        Write-LoopText $file ($text + "`n")
+        Invoke-Git $repo @('add', '--', $rel) | Out-Null
+        $c = Invoke-Git $repo @('commit', '-m', "[$id] pc-running", '--', $rel)
+        if ($c.Code -ne 0) { return "failed: commit $($c.Text.Trim())" }
+    }
+    catch { return "failed: $($_.Exception.Message)" }
+    finally { Exit-ControlLock $lock }
+    if ((Invoke-Git $repo @('status', '--porcelain')).Text.Trim()) { return 'written-local' }
+    $r = Sync-ControlRepo $Config -Message "[$id] pc-running"
+    if ($r.Ok) { return 'written-pushed' } else { return "written-local（push できなかった: $($r.Reason)）" }
+}
+
 Export-ModuleMember -Function *
