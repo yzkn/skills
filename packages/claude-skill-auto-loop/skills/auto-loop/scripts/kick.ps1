@@ -73,6 +73,8 @@ function Save-PcStatus([string]$Decision, [string]$Reason) {
     $script:pcStatus.decision = $Decision
     $script:pcStatus.reason = $public
     $script:pcStatus.kickEnabled = [bool]$kick.enabled
+    # この PC で手を動かしているセッションが担当しているタスク（ダッシュボードの「Claude 実行中」。20261128-status-labels）
+    try { $script:pcStatus.running = @(Get-RunningTasks -BusyMinutes ([double]$kick.busyMinutes) -ProjectsDir $projects) } catch { Write-LoopLog 'kick' "実行中のタスクを調べられない: $($_.Exception.Message)" }
     $r = Write-PcStatus -Config $cfg -Status $script:pcStatus -EveryMinutes ([double]$kick.statusEveryMinutes)
     if ($r -like 'failed*' -or $r -like 'written-local*') { Write-LoopLog 'kick' "PC の状況: $r" }
 }

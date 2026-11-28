@@ -31,9 +31,12 @@
    ```
    pwsh -NoProfile -File <scripts>/claim.ps1 heartbeat <タスク ID> -Note '<1 行の要約>'
    pwsh -NoProfile -File <scripts>/claim.ps1 heartbeat <タスク ID> -Status waiting -Note '<何を待っているか>'
+   pwsh -NoProfile -File <scripts>/claim.ps1 heartbeat <タスク ID> -Status waiting -Wait <spec|approval|command|answer> -Note '<何を待っているか>'
    ```
 
    `-Status` は `doing`（既定のまま）/ `waiting`（利用者の判断・承認待ち）/ `review`（PR / MR のマージ待ち）/ `blocked`（外部の要因）。待ちが解けたら `-Status doing` で戻す（ダッシュボードで回答がそろったときは、ダッシュボードが戻している）
+
+   `waiting` にするときは、何を待っているかを `-Wait` で添える（先頭のキー `wait` に書く。ダッシュボードが分けて出す）: `spec`（仕様・方針の確認）/ `approval`（承認が要る操作の承認）/ `command`（利用者に実行してもらうコマンド。`! gh auth login …` など）/ `answer`（それ以外の質問への回答）。迷ったら `answer`。ほかの状態にすると消える
 
 3. 結果を確かめる
    - 終了コード 2「主張が失われている」→ **作業を止めて**利用者に報告する（ほかのエージェントが引き継いだ）
