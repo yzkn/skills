@@ -11,6 +11,8 @@
        次の窓が始まるまでは five_hour が出ない）は、その窓だけ前の値を残す（ダッシュボードが「解除済み（前の窓 X%）」と出す）
     2. usage.statusLineCommand があれば、同じ JSON を渡して呼び、その出力をそのまま返す（無ければ何も表示しない）
   kick.ps1 が、この値を PC の状況（state/pcs/<ID>.json の usage）に載せ、ダッシュボードが PC の表に出す。
+  見た窓（種類・解除時刻・最大の %）は state/usage-windows.json にも残す。kick.ps1 が上限の窓（limits）に合わせ、ダッシュボードの上限の帯に出す
+  （セッションの記録は上限に近づいた窓しか出ないため。20261128-limit-band-fix）。
   失敗しても、表示（2）は続ける。利用枠（トークン）を使わない。
 .EXAMPLE
   （ステータスラインとして）pwsh -NoProfile -File statusline-usage.ps1
@@ -25,7 +27,7 @@ $raw = [Console]::In.ReadToEnd()
 try {
     Import-Module (Join-Path $PSScriptRoot 'lib/AutoLoop.psm1') -Force
     $snap = ConvertTo-UsageSnapshot ($raw | ConvertFrom-Json) -Previous (Read-UsageSnapshot)
-    if ($snap) { Save-UsageSnapshot $snap }
+    if ($snap) { Save-UsageSnapshot $snap; Add-UsageWindows $snap | Out-Null }
 }
 catch { }
 
