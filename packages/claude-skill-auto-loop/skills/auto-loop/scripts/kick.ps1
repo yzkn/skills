@@ -23,7 +23,7 @@
   （kick.settledCloseResumed。付いていないものだけ。DryRun では表示だけ）。
   判断のたびに、PC の状況を指令リポジトリの state/pcs/<agentId>.json に書く（kick.enabled のときだけ。中身が変わったときか
   kick.statusEveryMinutes 分ごと。このファイルだけをコミットし、ほかの変更が無いときだけ push する。ダッシュボードが読む）。
-  PC の状況には、直近 7 日の上限の窓（limits: 種類 five_hour / seven_day・推定の開始・解除時刻・当たったか）も載せる（セッションの記録から。state/kick-limits.json に前回の結果を残し、差分だけ読む）。
+  PC の状況には、直近 7 日の上限の窓（limits: 種類 five_hour / seven_day・推定の開始・解除時刻・当たったか）も載せる（セッションの記録と、ステータスラインが見た窓 state/usage-windows.json から。state/kick-limits.json に前回の結果を残し、記録は差分だけ読む）。
   利用率（usage: fiveHour / sevenDay の usedPercentage・resetsAt と capturedAt。statusline-usage.ps1 が書いた state/usage.json。install.ps1 -CaptureUsage）と、
   次の復帰（nextWakeAt: 復帰タスクの次の実行 / limitResetAt: セッションの記録の上限の解除）も、見送りの判断より前に調べて載せる。
   即時実行（-Trigger now）: ダッシュボードの「いま実行」「このタスクを実行」が指令リポジトリに書いた印（state/kick/<agentId>.json。

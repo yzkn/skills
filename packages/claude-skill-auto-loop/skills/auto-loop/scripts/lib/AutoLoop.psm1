@@ -577,32 +577,55 @@ function Find-LimitWindows {
 }
 
 # 上限の窓を、前回の結果（state/kick-limits.json）に、前回から書かれた記録の分だけを足して返す（記録の全部を毎回読むと数十秒かかるため）。
-# 解除時刻が Days 日より前のものは捨てる。NoSave なら結果を保存しない（DryRun）
+# セッションの記録（Find-LimitWindows）は上限に近づいた窓しか出ないので、ステータスラインが見た窓（Read-UsageWindows と、いまの
+# usage.json）も足す。5 時間・週とも同じ経路で、PC の表の利用率（usage）と同じ窓になる（20261128-limit-band-fix）。
+# 1 件 = kind・startsAt（解除時刻 − 窓の長さの推定）・resetsAt・hit（上限に当たった。記録の rejected か、peak が 100 以上）・peak（ステータスラインが見た最大の %。無ければ載せない）。
+# 解除時刻が Days 日より前のものは捨てる。NoSave なら結果を保存しない（DryRun）。UsageWindows を渡せば、ステータスラインの窓はそれだけを使う（試験用）
 function Update-LimitWindows {
-    param([string]$ProjectsDir, [int]$Days = 7, [switch]$NoSave)
+    param([string]$ProjectsDir, [int]$Days = 7, [switch]$NoSave, $UsageWindows = $null)
     $file = Join-Path (Get-LoopHome) 'state/kick-limits.json'
     $now = [datetime]::Now
     $since = $now.AddDays(-$Days)
+    $fmt = 'yyyy-MM-ddTHH:mm:sszzz'
+    $norm = {
+        param($w)
+        $o = [ordered]@{ kind = [string]$w.kind; startsAt = (ConvertTo-IsoText $w.startsAt); resetsAt = (ConvertTo-IsoText $w.resetsAt); hit = [bool]$w.hit }
+        if ($w.PSObject.Properties['peak'] -and $null -ne $w.peak) { $o.peak = [double]$w.peak }
+        return $o
+    }
     $prev = @(); $filesSince = $null
     if (Test-Path -LiteralPath $file) {
         try {
             $c = Read-LoopText $file | ConvertFrom-Json
             $filesSince = [datetimeoffset]::Parse([string]$c.scannedAt).LocalDateTime.AddMinutes(-5)   # 書き込みの途中だった記録を取りこぼさないよう、少し重ねる
-            $prev = @($c.windows | Where-Object { $_ } | ForEach-Object { [ordered]@{ kind = [string]$_.kind; startsAt = (ConvertTo-IsoText $_.startsAt); resetsAt = (ConvertTo-IsoText $_.resetsAt); hit = [bool]$_.hit } })
+            $prev = @($c.windows | Where-Object { $_ } | ForEach-Object { & $norm $_ })
         }
         catch { $prev = @(); $filesSince = $null }
     }
     $new = @(Find-LimitWindows -ProjectsDir $ProjectsDir -Since $since -FilesSince $filesSince)
+    if ($null -eq $UsageWindows) { $UsageWindows = @(Read-UsageWindows) + @(ConvertTo-UsageWindowList (Read-UsageSnapshot)) }
+    $fromUsage = @(foreach ($u in @($UsageWindows | Where-Object { $_ })) {
+            try { $r = [datetimeoffset]::Parse([string](ConvertTo-IsoText $u.resetsAt)) } catch { continue }
+            $len = if ($u.kind -eq 'five_hour') { [TimeSpan]::FromHours(5) } else { [TimeSpan]::FromDays(7) }
+            $o = [ordered]@{ kind = [string]$u.kind; startsAt = $r.Subtract($len).ToString($fmt); resetsAt = $r.ToString($fmt); hit = ($null -ne $u.peak -and [double]$u.peak -ge 100) }
+            if ($null -ne $u.peak) { $o.peak = [double]$u.peak }
+            $o
+        })
     $byKey = [ordered]@{}
-    foreach ($w in @($prev + $new)) {
+    foreach ($w in @($prev + $new + $fromUsage)) {
+        if ($w.kind -notin @('five_hour', 'seven_day')) { continue }
         try { if ([datetimeoffset]::Parse($w.resetsAt).LocalDateTime -le $since) { continue } } catch { continue }
         $key = "$($w.kind)/$([datetimeoffset]::Parse($w.resetsAt).ToUnixTimeSeconds())"
-        if ($byKey.Contains($key)) { if ($w.hit) { $byKey[$key].hit = $true } } else { $byKey[$key] = $w }
+        if (-not $byKey.Contains($key)) { $byKey[$key] = $w; continue }
+        $e = $byKey[$key]
+        if ($w.hit) { $e.hit = $true }
+        if ($w.Contains('peak') -and (-not $e.Contains('peak') -or [double]$w.peak -gt [double]$e.peak)) { $e.peak = [double]$w.peak }
     }
-    $list = @($byKey.Values | Sort-Object { [datetimeoffset]::Parse($_.resetsAt) }, { $_.kind } | Select-Object -Last 30)
+    # 5 時間の窓は 7 日で最大 34 本ほど。週の窓と合わせて収まる数にする
+    $list = @($byKey.Values | Sort-Object { [datetimeoffset]::Parse($_.resetsAt) }, { $_.kind } | Select-Object -Last 60)
     if (-not $NoSave) {
         New-Item -ItemType Directory -Force (Split-Path -Parent $file) | Out-Null
-        Write-LoopText $file ((@{ scannedAt = $now.ToString('yyyy-MM-ddTHH:mm:sszzz'); windows = $list } | ConvertTo-Json -Depth 4) + "`n")
+        Write-LoopText $file ((@{ scannedAt = $now.ToString($fmt); windows = $list } | ConvertTo-Json -Depth 4) + "`n")
     }
     return $list
 }
@@ -1430,13 +1453,71 @@ function ConvertTo-UsageSnapshot {
     return $snap
 }
 
+# 利用率の窓の一覧（ConvertTo-UsageSnapshot / Read-UsageSnapshot の戻り → [{ kind; resetsAt; peak }]）。解除時刻の無い窓は除く
+function ConvertTo-UsageWindowList {
+    param($Snapshot)
+    if (-not $Snapshot) { return @() }
+    $get = { param($o, [string]$k) if ($o -is [System.Collections.IDictionary]) { if ($o.Contains($k)) { $o[$k] } else { $null } } elseif ($o -and $o.PSObject.Properties[$k]) { $o.$k } else { $null } }
+    return @(foreach ($pair in @(@('fiveHour', 'five_hour'), @('sevenDay', 'seven_day'))) {
+            $w = & $get $Snapshot $pair[0]
+            $r = & $get $w 'resetsAt'
+            if (-not $r) { continue }
+            $p = & $get $w 'usedPercentage'
+            [ordered]@{ kind = $pair[1]; resetsAt = (ConvertTo-IsoText $r); peak = $(if ($null -ne $p) { [double]$p } else { $null }) }
+        })
+}
+
+function Get-UsageWindowsFile { return (Join-Path (Get-LoopHome) 'state/usage-windows.json') }
+
+# ステータスラインが見た窓の履歴（state/usage-windows.json の windows。[{ kind; resetsAt; peak }]）。無い・読めなければ空
+function Read-UsageWindows {
+    param([string]$Path = (Get-UsageWindowsFile))
+    if (-not (Test-Path -LiteralPath $Path)) { return @() }
+    try { $j = [IO.File]::ReadAllText($Path, $script:Utf8NoBom) | ConvertFrom-Json } catch { return @() }
+    return @($j.windows | Where-Object { $_ -and $_.kind -and $_.resetsAt } | ForEach-Object {
+            [ordered]@{ kind = [string]$_.kind; resetsAt = (ConvertTo-IsoText $_.resetsAt); peak = $(if ($null -ne $_.peak) { [double]$_.peak } else { $null }) } })
+}
+
+# ステータスラインが見た窓（種類・解除時刻）と、その窓で見た最大の %（peak）を履歴に足す（statusline-usage.ps1 が呼ぶ）。
+# 上限の帯（Update-LimitWindows）が、上限に近づかなかった窓も描けるように残す。新しい窓か、peak が上がったときだけ書く。
+# 解除時刻が KeepDays 日より前のものは捨てる。戻り値: 書いたら $true
+function Add-UsageWindows {
+    param($Snapshot, [string]$Path = (Get-UsageWindowsFile), [int]$KeepDays = 8, [datetime]$Now = (Get-Date))
+    $add = @(ConvertTo-UsageWindowList $Snapshot)
+    if ($add.Count -eq 0) { return $false }
+    $list = [System.Collections.Generic.List[object]]::new()
+    foreach ($w in @(Read-UsageWindows -Path $Path)) { $list.Add($w) }
+    $changed = $false
+    foreach ($a in $add) {
+        $e = $list | Where-Object { $_.kind -eq $a.kind -and $_.resetsAt -eq $a.resetsAt } | Select-Object -First 1
+        if (-not $e) { $list.Add($a); $changed = $true; continue }
+        if ($null -ne $a.peak -and ($null -eq $e.peak -or [double]$a.peak -gt [double]$e.peak)) { $e.peak = [double]$a.peak; $changed = $true }
+    }
+    $limit = $Now.AddDays(-$KeepDays)
+    $kept = @($list | Where-Object { try { [datetimeoffset]::Parse($_.resetsAt).LocalDateTime -gt $limit } catch { $false } })
+    if ($kept.Count -ne $list.Count) { $changed = $true }
+    if (-not $changed) { return $false }
+    $kept = @($kept | Sort-Object { [datetimeoffset]::Parse($_.resetsAt) }, { $_.kind })
+    Write-AtomicText $Path ((@{ windows = $kept } | ConvertTo-Json -Depth 4) + "`n")
+    return $true
+}
+
+# 一時ファイルに書いてから置き換える（書きかけを読まれない。複数のセッションが同時に書いても壊れない）。置き換えに失敗したら一時ファイルを消す
+function Write-AtomicText {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Text)
+    New-Item -ItemType Directory -Force (Split-Path -Parent $Path) | Out-Null
+    $tmp = "$Path.$PID.tmp"
+    try {
+        [IO.File]::WriteAllText($tmp, $Text, $script:Utf8NoBom)
+        Move-Item -LiteralPath $tmp -Destination $Path -Force -ErrorAction Stop
+    }
+    finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } }
+}
+
 function Save-UsageSnapshot {
     param([Parameter(Mandatory)]$Snapshot, [string]$Path = (Get-UsageFile))
-    New-Item -ItemType Directory -Force (Split-Path -Parent $Path) | Out-Null
-    # 書きかけを読まれないよう、一時ファイルに書いてから置き換える（複数のセッションが同時に書いても壊れない）
-    $tmp = "$Path.$PID.tmp"
-    [IO.File]::WriteAllText($tmp, ((([pscustomobject]$Snapshot) | ConvertTo-Json -Depth 4) + "`n"), $script:Utf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    # 書きかけを読まれないよう、一時ファイルに書いてから置き換える（置き換えに失敗した一時ファイルは残さない）
+    Write-AtomicText $Path ((([pscustomobject]$Snapshot) | ConvertTo-Json -Depth 4) + "`n")
 }
 
 # 前回の値を読む。値は書いた時点のもの（capturedAt）。解除時刻を過ぎた窓も残す（ダッシュボードが前の窓の値として添える）
